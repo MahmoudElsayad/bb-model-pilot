@@ -21,7 +21,7 @@ Start with ordinary tasks and compare the results before you depend on a classif
 
 ## Install
 
-Version 0.4.0 is an experimental BB plugin for BB 0.46 on macOS.
+Version 0.4.1 is an experimental BB plugin for BB 0.46 on macOS.
 It uses internal BB provider bridges, so a BB update can break compatibility.
 Other platforms and BB versions do not have verified support.
 Native classification was tested with Codex CLI 0.162.1 and Claude Code 2.1.300 command interfaces.
@@ -101,6 +101,21 @@ The `auto_step_done` tool records a completed main step.
 Background helpers return their reports through BB's child thread mechanism.
 Foreground helpers return their reports through the tool result.
 The main agent remains responsible for the final result.
+
+## Routing in the thread
+
+Each routed message starts with one route row.
+The first message shows "Routed to" and the main model, for example "Routed to Opus 5.5".
+Later messages show "Continued on" and the same model.
+The row also shows the effort and the context window.
+If the classifier chose a helper or a plan, the row shows it too.
+Expand the row to read why the classifier chose that route.
+A "Fallback route" badge means that classification was unavailable.
+
+A plan row shows the number of steps and the helper models.
+Expand it to see who does each step.
+Each helper row shows the helper's model, effort, and plan step.
+Background helpers show "Started background helper" because their reports arrive later.
 
 For example, a short explanation can stay with a smaller model.
 A larger implementation can use a stronger main model and focused helpers.

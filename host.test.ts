@@ -259,21 +259,28 @@ test("defers native launch, preserves permissions and tools, and emits one ident
     1,
   );
   assert(
-    deltas.some(
-      (delta) =>
-        delta.kind === "item.close" &&
-        delta.item.type === "agentMessage" &&
-        delta.item.text.includes("Luna"),
+    !deltas.some(
+      (delta) => delta.kind === "item.close" && delta.item.type === "agentMessage",
     ),
+    "routing is not shown as assistant text",
   );
   const events = experimental_assembleCapturedThreadEvents(h.messages, "auto");
-  assert(
-    events.some(
-      (event) =>
-        event.type === "item/completed" &&
-        event.item.type === "agentMessage" &&
-        event.item.text.includes("Luna"),
-    ),
+  const row = events.find(
+    (event) =>
+      event.type === "item/completed" && event.item.type === "extension",
+  );
+  assert(row?.type === "item/completed" && row.item.type === "extension");
+  assert.equal(row.item.kind, "auto-router/route");
+  assert.equal(row.item.presentation.label.completed, "Routed to GPT-6 Luna");
+  assert.equal(row.item.presentation.title, "low effort");
+  assert.deepEqual(row.item.presentation.tint, {
+    light: "#c8641f",
+    dark: "#ec8743",
+  });
+  assert.equal(
+    z.object({ main: z.object({ model: z.string() }) }).parse(row.item.payload)
+      .main.model,
+    "gpt-6-luna",
   );
   h.bridge.onClose?.();
 });
@@ -617,5 +624,163 @@ test("passes the published BB provider bridge conformance kit", async () => {
     report.passed,
     true,
     experimental_formatConformanceReport(report),
+  );
+});
+
+function routeRows(messages: RpcMessage[]) {
+  return experimental_assembleCapturedThreadEvents(messages, "auto").flatMap(
+    (event) =>
+      event.type === "item/completed" && event.item.type === "extension"
+        ? [event.item]
+        : [],
+  );
+}
+
+function toolRow(messages: RpcMessage[], tool: string) {
+  return experimental_assembleCapturedThreadEvents(messages, "auto").flatMap(
+    (event) =>
+      event.type === "item/completed" &&
+      event.item.type === "toolCall" &&
+      event.item.tool === tool
+        ? [event.item]
+        : [],
+  );
+}
+
+test("each routed message gets one route row, and later messages say the model continues", async () => {
+  const h = await harness(async () => jev, true);
+  const id = await h.start();
+  await h.response(h.turn(id, "creq_firstaaaaa"));
+  await h.response(h.turn(id, "creq_secndaaaaa"));
+  const rows = routeRows(h.messages);
+  assert.deepEqual(
+    rows.map((row) => row.presentation.label.completed),
+    ["Routed to GPT-6 Luna", "Continued on GPT-6 Luna"],
+  );
+});
+
+test("a helper route names the helper, and a fallback route carries a badge", async () => {
+  const helperJev: JevReply = {
+    answers: {
+      model: { choice: "claude-opus-5-5", confidence: 0.9 },
+      effort: { choice: "high", confidence: 1 },
+      window: { choice: "1m", confidence: 1 },
+      shape: { choice: "helper", confidence: 1 },
+      helperModel: { choice: "claude-haiku-4-5-20251001", confidence: 1 },
+      helperEffort: { choice: "low", confidence: 1 },
+      helperContext: { choice: "200k", confidence: 1 },
+    },
+    jev: { isAnswered: true, ms: 3, inputTokens: 200, keyMs: 0 },
+  };
+  const helper = await harness(async () => helperJev);
+  await helper.response(helper.turn(await helper.start()));
+  const [routed] = routeRows(helper.messages);
+  assert.equal(routed?.presentation.label.completed, "Routed to Opus 5.5");
+  assert.equal(
+    routed?.presentation.title,
+    "high effort · 1M context · helper Haiku 4.5 low",
+  );
+  assert.equal(routed?.presentation.badge, undefined);
+
+  const fallback = await harness(async () => ({
+    answers: null,
+    jev: { isAnswered: false, ms: 3, inputTokens: 0, keyMs: 0 },
+  }));
+  await fallback.response(fallback.turn(await fallback.start()));
+  const [defaulted] = routeRows(fallback.messages);
+  assert.equal(defaulted?.presentation.badge?.label, "Fallback route");
+});
+
+test("plan and helper rows name each step's model from the routed plan", async () => {
+  const h = await harness();
+  const id = await h.start();
+  await h.response(h.turn(id));
+  const helper = {
+    model: "claude-haiku-4-5-20251001",
+    effort: "low",
+    window: "200k",
+    confidence: 1,
+    source: "jev",
+  } as const;
+  const step = (index: number, title: string, owner: "main" | "helper") => ({
+    index,
+    title,
+    after: [],
+    owner,
+    helper: owner === "helper" ? helper : null,
+    background: index === 2,
+    status: "pending" as const,
+  });
+  await host.handlers.notePlan(
+    {
+      threadId: "bb-thread",
+      plan: [
+        step(1, "Read README.md", "main"),
+        step(2, "Read releases.csv", "helper"),
+        step(3, "Compare totals", "main"),
+      ],
+    },
+    {
+      experimental_paths: { dataDir: h.directory, tempDir: h.directory },
+      signal: new AbortController().signal,
+      lifecycle: { signal: new AbortController().signal },
+      experimental_emitSignal: async () => {},
+      experimental_watch: async () => ({ dispose: async () => {} }),
+      experimental_retainWorker: () => ({ dispose: async () => {} }),
+    },
+  );
+  const native = h.launches[0]!.args;
+  const tool = (
+    id: string,
+    name: string,
+    args: unknown,
+    status: "completed" | "failed",
+  ) => {
+    for (const kind of ["item.open", "item.close"] as const)
+      native.onMessage({
+        jsonrpc: "2.0",
+        method: "thread/delta",
+        params: {
+          threadId: "bb-thread",
+          deltas: [
+            {
+              kind,
+              key: { providerItemId: id },
+              item: { type: "tool", server: "bb", tool: name, args },
+              presentation: {
+                label: { pending: "Running", completed: "Ran" },
+                icon: { glyph: "Toolbox" },
+              },
+              ...(kind === "item.close" ? { status } : {}),
+              providerTurnId: "native-turn-1",
+            },
+          ],
+        },
+      });
+  };
+  tool("plan-1", "auto_plan", { steps: [] }, "completed");
+  tool("helper-1", "auto_delegate", { task: "Read it.", step: 2 }, "completed");
+  const [plan] = toolRow(h.messages, "auto_plan");
+  assert.equal(plan?.presentation?.label.completed, "Routed plan");
+  assert.equal(plan?.presentation?.title, "3 steps · 1 helper on Haiku 4.5");
+  assert.equal(
+    plan?.presentation?.detail,
+    "1. Read README.md → main agent\n2. Read releases.csv → Haiku 4.5 low, background\n3. Compare totals → main agent",
+  );
+  const [delegated] = toolRow(h.messages, "auto_delegate");
+  assert.equal(
+    delegated?.presentation?.label.completed,
+    "Started background helper",
+  );
+  assert.equal(
+    delegated?.presentation?.title,
+    "Haiku 4.5 · low effort · 200k context · step 2",
+  );
+  await h.response(h.turn(id, "creq_secndaaaaa"));
+  tool("helper-2", "auto_delegate", { task: "Read it.", step: 2 }, "completed");
+  assert.equal(
+    toolRow(h.messages, "auto_delegate")[1]?.presentation?.label.completed,
+    "Ran",
+    "a new message drops the earlier message's plan",
   );
 });

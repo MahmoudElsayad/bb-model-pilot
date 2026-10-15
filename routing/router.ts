@@ -9,6 +9,11 @@ export const routeSchema = z.object({
   source: z.enum(["jev", "fallback"]), vote: z.record(z.string(), z.number()).optional(),
   priced: z.object({ from: z.string() }).optional(),
 });
+export const planSchema = z.array(z.object({
+  index: z.number().int().positive(), title: z.string(), after: z.array(z.number().int().positive()),
+  owner: z.enum(["main", "helper"]), helper: routeSchema.nullable(), background: z.boolean(),
+  status: z.enum(["pending", "started", "done"]),
+}));
 export const routingSettingsSchema = z.object({ toolsOnPickedThreads: z.boolean().default(false) });
 export type RoutingSettings = z.infer<typeof routingSettingsSchema>;
 

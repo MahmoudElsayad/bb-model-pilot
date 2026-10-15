@@ -24,8 +24,9 @@ import {
   nativeProviderSchema,
   type NativeModel,
 } from "./routing/classifier.js";
-import { makeThreadRouter, routeSchema } from "./routing/router.js";
+import { makeThreadRouter, planSchema, routeSchema } from "./routing/router.js";
 import { makePlanRouter } from "./routing/plans.js";
+import { ACCENT, routeRowSchema } from "./routing/display.js";
 import { summarizeRouting } from "./report.js";
 import {
   planText,
@@ -36,17 +37,6 @@ import {
   type Route,
 } from "./routing/core.js";
 
-const planSchema = z.array(
-  z.object({
-    index: z.number().int().positive(),
-    title: z.string(),
-    after: z.array(z.number().int().positive()),
-    owner: z.enum(["main", "helper"]),
-    helper: routeSchema.nullable(),
-    background: z.boolean(),
-    status: z.enum(["pending", "started", "done"]),
-  }),
-);
 const stepsSchema = z
   .array(
     z.object({
@@ -603,6 +593,7 @@ export default async function plugin(
     maintenance: { health: true, usage: false, installation: false },
     composerActions: ["plan"],
     completedTurnDisplay: "flat",
+    extensionKinds: { route: { item: routeRowSchema } },
     models: {
       scope: "host",
       fallback: [
@@ -743,10 +734,9 @@ export default async function plugin(
     description:
       "List the steps for this task. The classification model assigns each step to the main agent or a helper.",
     presentation: {
-      label: {
-        pending: "Assigning plan steps",
-        completed: "Plan steps assigned",
-      },
+      label: { pending: "Routing plan steps", completed: "Routed plan" },
+      icon: { glyph: "ListTodo" },
+      tint: ACCENT,
     },
     parameters: {
       type: "object",
@@ -769,12 +759,27 @@ export default async function plugin(
     },
     async execute(raw, ctx) {
       const { steps } = z.object({ steps: stepsSchema }).parse(raw);
-      const { route, environment } = await session(ctx.threadId, ctx.signal);
+      const { route, environment, thread } = await session(
+        ctx.threadId,
+        ctx.signal,
+      );
       const routePlan = makePlanRouter(
         askOnHost(environment.hostId, ctx.signal),
       );
       const { plan, jev } = await routePlan(steps, route);
       await bb.storage.kv.set(planKey(ctx.threadId), plan);
+      if (thread.providerId === "auto")
+        await host
+          .call(
+            "notePlan",
+            { threadId: ctx.threadId, plan },
+            { hostId: environment.hostId, signal: ctx.signal },
+          )
+          .catch((error) =>
+            bb.log.warn(
+              `Auto plan display failed in ${ctx.threadId}: ${message(error)}`,
+            ),
+          );
       const at = Date.now();
       await bb.storage.kv.set(`plan-routing:${ctx.threadId}`, {
         jev,
@@ -845,10 +850,9 @@ export default async function plugin(
     description:
       "Give a complete task brief to the selected helper, optionally for an assigned plan step.",
     presentation: {
-      label: {
-        pending: "Running Auto helper",
-        completed: "Auto helper report",
-      },
+      label: { pending: "Running helper", completed: "Helper finished" },
+      icon: { glyph: "Bot" },
+      tint: ACCENT,
     },
     parameters: {
       type: "object",

@@ -9,6 +9,7 @@ import {
 } from "./routing/classifier.js";
 import { lineSchema } from "./report.js";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   access,
   appendFile,
@@ -49,11 +50,25 @@ import { NO_JEV_CALL, type JevAsk, readJevKey } from "./routing/jev.js";
 import { modelInfo } from "./routing/models.js";
 import {
   makeThreadRouter,
+  planSchema,
   routeSchema,
   type RouteRecord,
   type RouteReply,
 } from "./routing/router.js";
-import { HELPER_MODELS, routedSummary, type Route } from "./routing/core.js";
+import {
+  HELPER_MODELS,
+  stepForHandOff,
+  type Plan,
+  type Route,
+} from "./routing/core.js";
+import {
+  helperRowPresentation,
+  planRowPresentation,
+  routeRow,
+  routeRowPresentation,
+  ROUTE_ROW_KIND,
+  type RouteRow,
+} from "./routing/display.js";
 import {
   launchBridge,
   rpcMessageSchema,
@@ -97,7 +112,7 @@ type Session = {
   nativeReady: Promise<void> | null;
   cancelled: number;
   activeTurn: string | null;
-  routingText: string | null;
+  routeRow: RouteRow | null;
   closing: boolean;
   queue: Promise<void>;
   ledger: Promise<void>;
@@ -311,6 +326,55 @@ export function makeAutoBridge(
     }
     return session;
   }
+  /**
+   * The plan the server routed for this thread, written by the host's notePlan handler. A plan
+   * names each helper step's model, so plan and helper rows can show it.
+   */
+  function routedPlan(threadId: string): Plan | undefined {
+    try {
+      const parsed = planSchema.safeParse(
+        JSON.parse(readFileSync(planFile(dataDir(), threadId), "utf8")),
+      );
+      return parsed.success ? parsed.data : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  /** Routing tool rows as BB shows them: the plan's assignments and each helper's model. */
+  function decorated(session: Session, delta: ThreadDelta): ThreadDelta {
+    if (
+      (delta.kind !== "item.open" && delta.kind !== "item.close") ||
+      delta.item.type !== "tool"
+    )
+      return delta;
+    if (delta.item.tool === "auto_plan") {
+      const plan =
+        delta.kind === "item.close" && delta.status === "completed"
+          ? routedPlan(session.saved.threadId)
+          : undefined;
+      return { ...delta, presentation: planRowPresentation(plan) };
+    }
+    if (delta.item.tool === "auto_delegate") {
+      const args = z
+        .object({
+          task: z.string().default(""),
+          step: z.number().int().optional(),
+        })
+        .safeParse(delta.item.args ?? {});
+      const step = args.success
+        ? stepForHandOff(
+            routedPlan(session.saved.threadId) ?? [],
+            args.data.step,
+            args.data.task,
+          )
+        : undefined;
+      const helper = step?.helper ?? session.saved.delegation?.helper ?? null;
+      return helper === null
+        ? delta
+        : { ...delta, presentation: helperRowPresentation(helper, step) };
+    }
+    return delta;
+  }
   function nativeMessage(session: Session, message: RpcMessage) {
     if (session.closing || closed) return;
     if (message.method === "thread/identity") {
@@ -333,25 +397,33 @@ export function makeAutoBridge(
       for (const delta of parsed.deltas) {
         if (delta.kind === "session.reset" || delta.kind === "thread.identity")
           continue;
-        output.push(delta);
+        output.push(decorated(session, delta));
         if (delta.kind === "turn.open") {
           session.activeTurn = delta.providerTurnId ?? "auto-active";
-          if (session.routingText !== null) {
+          if (session.routeRow !== null) {
             const key = { providerItemId: `auto-routing-${randomUUID()}` };
+            const item = {
+              type: "extension" as const,
+              kind: ROUTE_ROW_KIND,
+              payload: session.routeRow,
+            };
+            const presentation = routeRowPresentation(session.routeRow);
             output.push({
               kind: "item.open",
               key,
-              item: { type: "agentMessage", text: session.routingText },
+              item,
+              presentation,
               providerTurnId: delta.providerTurnId,
             });
             output.push({
               kind: "item.close",
               key,
-              item: { type: "agentMessage", text: session.routingText },
+              item,
+              presentation,
               status: "completed",
               providerTurnId: delta.providerTurnId,
             });
-            session.routingText = null;
+            session.routeRow = null;
           }
         }
         if (delta.kind === "turn.boundary") session.activeTurn = null;
@@ -524,7 +596,10 @@ export function makeAutoBridge(
         /^\[bb system\]\s+@thread:thr_[a-z0-9]+ (completed|failed):/.test(
           prompt,
         ));
-    if (!continuation) session.saved.revision = turn.clientRequestId;
+    if (!continuation) {
+      session.saved.revision = turn.clientRequestId;
+      await unlink(planFile(dataDir(), turn.threadId)).catch(() => {});
+    }
     const forced = helperRoute(session.construction.options.model);
     const decision: RouteReply = continuation
       ? {
@@ -560,7 +635,11 @@ export function makeAutoBridge(
     const selected = decision.route ?? session.saved.route;
     if (selected === null) throw new Error("Auto did not select a model");
     if (!continuation)
-      session.routingText = `${routedSummary(selected, decision.delegation)}${selected.source === "fallback" ? " (classification unavailable, fallback route)" : ""}`;
+      session.routeRow = routeRow(
+        selected,
+        decision.delegation,
+        previous === null ? "first" : "later",
+      );
     await ready(session, turn.options, selected);
     const child = session.native;
     const nativeId = session.saved.nativeId;
@@ -614,7 +693,7 @@ export function makeAutoBridge(
       nativeReady: null,
       cancelled: 0,
       activeTurn: null,
-      routingText: null,
+      routeRow: null,
       closing: false,
       queue: Promise.resolve(),
       ledger: Promise.resolve(),
@@ -996,6 +1075,12 @@ async function writePrivateFile(file: string, value: string) {
   await chmod(temporary, 0o600);
   await rename(temporary, file);
 }
+const planFile = (dataDir: string, threadId: string) =>
+  join(
+    dataDir,
+    "plans",
+    `${z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).parse(threadId)}.json`,
+  );
 const bridgeDirectory = (hostDir: string) =>
   basename(hostDir) === "host-data"
     ? join(dirname(hostDir), "bridge-data")
@@ -1226,6 +1311,13 @@ export default experimental_defineHostEntry({
       return readRetainedSessions(
         bridgeDirectory(context.experimental_paths.dataDir),
       );
+    },
+    async notePlan({ threadId, plan }, context) {
+      await writePrivateFile(
+        planFile(bridgeDirectory(context.experimental_paths.dataDir), threadId),
+        JSON.stringify(plan),
+      );
+      return {};
     },
     async getSession({ threadId }, context) {
       const bridgeDir = bridgeDirectory(context.experimental_paths.dataDir);

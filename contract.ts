@@ -1,7 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { retainedSessionSchema } from "./dashboard.js";
-import { routeSchema } from "./routing/router.js";
+import { planSchema, routeSchema } from "./routing/router.js";
 import {
   classifierConfigSchema,
   classifierSetupInputSchema,
@@ -77,6 +77,12 @@ export const hostContract = defineRpcContract({
       })
       .strict(),
     output: classifierResultSchema,
+  },
+  notePlan: {
+    input: z
+      .object({ threadId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/), plan: planSchema })
+      .strict(),
+    output: z.object({}),
   },
   getSession: {
     input: z.object({ threadId: z.string().min(1) }).strict(),
