@@ -35,6 +35,12 @@ Install the tagged release in BB with this command.
 bb plugin install 'git:https://github.com/MahmoudElsayad/bb-model-pilot.git@^0.4.0'
 ```
 
+Add the publisher catalog to discover Model Pilot in BB before Community marketplace review finishes.
+
+```sh
+bb marketplace add git:https://github.com/MahmoudElsayad/bb-model-pilot.git@main
+```
+
 The BB Community marketplace submission is pending.
 Direct Git installation does not depend on marketplace approval.
 The source uses the MIT license and accepts contributions through GitHub pull requests.
