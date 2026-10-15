@@ -1,0 +1,28 @@
+{
+  "source": "apps/server/src/routing",
+  "sourceSha256": {
+    "core.ts": "12d97bcb6d619c11dd3e32b228febaf19b013c2dad8e74280f42895d2c8755c3",
+    "models.ts": "fe1a7689674584d3fe25b25c3cf222b416212edb9dec5c44591566fd25cdc9ed",
+    "jev.ts": "40055b8df5ef0f55cae8baa84a8637f75b6eac39dd51a6fd2a28e7d9ec548bcd",
+    "router.ts": "4a3a7487fa1b96648713141dd942d390118dc5089718a1e0ae004d65ff854cb3",
+    "plans.ts": "28d554e595dc53a8d12ca9650f1e4ed5a3478802a6c5c0c1a2c5791918710f97"
+  },
+  "changes": {
+    "core.ts": "Only ./models.ts import becomes ./models.js.",
+    "models.ts": "Unchanged.",
+    "jev.ts": "Native Promise equivalent with Zod boundary decoding, secret-safe warnings and shared pending credential lookup.",
+    "router.ts": "Native Promise first/later router with injected persistence. Same tables, questions, fallback and decision flow. Adds schemas.",
+    "plans.ts": "In-memory native plan store and Promise plan routing wrapper. Same core plan policy."
+  },
+  "settings": {
+    "source": "T3 Code effective routing configuration at local import",
+    "routingFieldPresent": false,
+    "effectiveRouting": {
+      "toolsOnPickedThreads": false
+    }
+  },
+  "sourceRepository": "https://github.com/pingdotgg/t3code",
+  "sourceCommit": "92b13f8a68a8b2974013d76d09151bab0aec9bf5",
+  "sourceCommitPublished": false,
+  "sourceDescription": "User-authored Auto patch applied to T3 Code. The commit is local and does not imply that upstream publishes these routing files."
+}

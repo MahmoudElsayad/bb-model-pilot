@@ -1,0 +1,76 @@
+{
+  "name": "bb-plugin-auto-router",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "bb": ">=0.46.0 <0.47.0",
+    "bbPluginSdk": ">=0.6.26"
+  },
+  "bb": {
+    "name": "Model Pilot",
+    "description": "Match coding tasks to agent models, reasoning effort, and focused helpers. Track token usage and estimated costs in BB.",
+    "branding": {
+      "icon": "Workflow"
+    },
+    "server": "./server.ts",
+    "host": "./host.ts",
+    "experimental_providers": [
+      {
+        "kind": "agent",
+        "id": "auto",
+        "displayName": "Model Pilot"
+      }
+    ],
+    "app": "./app.tsx"
+  },
+  "scripts": {
+    "build": "bb plugin build",
+    "test": "tsx --test host.test.ts server.test.ts routing/router.test.ts routing/classifier.test.ts routing/native-classifier.test.ts report.test.ts dashboard.test.ts dashboard-view.test.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.3.6",
+    "@get-bb/plugin-sdk": "0.6.26"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.0",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "better-sqlite3": "^12.10.0",
+    "cron-parser": "^5.5.0",
+    "hono": "4.13.13",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  },
+  "packageManager": "pnpm@10.34.6",
+  "license": "MIT",
+  "author": {
+    "name": "Mahmoud Elsayad",
+    "url": "https://github.com/MahmoudElsayad"
+  },
+  "homepage": "https://github.com/MahmoudElsayad/bb-model-pilot#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MahmoudElsayad/bb-model-pilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MahmoudElsayad/bb-model-pilot/issues"
+  },
+  "keywords": [
+    "bb-plugin",
+    "ai-model-routing",
+    "automatic-model-selection",
+    "coding-agents",
+    "codex",
+    "claude-code",
+    "jev",
+    "openai",
+    "haiku",
+    "token-usage",
+    "cost-estimation",
+    "agent-delegation"
+  ]
+}
