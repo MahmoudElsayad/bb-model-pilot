@@ -4,7 +4,7 @@ Model Pilot adds AI model routing and automatic model selection to coding agents
 It chooses a main model, assigns focused helper work, and shows token usage with cost estimates.
 It supports Codex and Claude Code through your existing agent sign-ins.
 
-Version 0.4.0 is experimental and targets BB 0.46 on macOS.
+Version 0.4.1 is experimental and targets BB 0.46 on macOS.
 It uses internal BB provider bridges, so a BB update can break compatibility.
 Other platforms and BB versions do not have verified support.
 Coding model availability depends on your provider accounts.

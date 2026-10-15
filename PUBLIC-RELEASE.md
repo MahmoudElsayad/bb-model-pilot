@@ -1,9 +1,17 @@
-# Model Pilot 0.4.0 release notes and requirements
+# Model Pilot 0.4.1 release notes and requirements
 
 Model Pilot is an experimental BB plugin for AI model routing, coding agents, and usage reporting.
 The public source is [MahmoudElsayad/bb-model-pilot](https://github.com/MahmoudElsayad/bb-model-pilot).
 Original plugin code uses the MIT license with copyright 2026 Mahmoud Elsayad.
 Copied T3 Code portions retain the MIT notice in `notices/T3-CODE-LICENSE.txt`.
+
+## Changes in 0.4.1
+
+Routing decisions now appear as their own timeline rows instead of assistant text.
+Each routed message shows one route row with the model, effort, context window, and any helper or plan.
+Plan rows show the step count and helper models.
+Helper rows show each helper's model, effort, and plan step.
+Routing rows use the orange theme accent on their icons.
 
 ## Installation and marketplace status
 
@@ -20,7 +28,7 @@ The secondary category is `token-usage-and-limits`.
 
 ## Compatibility limits
 
-Version 0.4.0 targets BB 0.46 on macOS, bridge protocol 2, and grammar version 3.
+Version 0.4.1 targets BB 0.46 on macOS, bridge protocol 2, and grammar version 3.
 The adapter uses internal BB bridge files rather than a public reusable provider factory.
 A BB update can require an adapter update.
 Other platforms and BB versions do not have verified support.
