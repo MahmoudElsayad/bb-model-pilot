@@ -135,7 +135,7 @@ export default async function plugin(
     classifierProvider: {
       type: "string",
       label: "Classification provider",
-      default: "native",
+      default: "jev",
     },
     classifierModel: {
       type: "string",

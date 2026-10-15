@@ -128,6 +128,27 @@ function RoutingDashboard({ threadId }: { threadId?: string }) {
       setSavingConnection(false);
     }
   };
+  const saveJevConnection = async (key: string | undefined) => {
+    setSavingConnection(true);
+    setConnectionMessage(null);
+    setConnectionError(false);
+    try {
+      await rpc.call("saveClassifier", {
+        provider: "jev",
+        model: "jev-latest",
+        ...(key ? { key } : {}),
+        ...(hostId ? { hostId } : {}),
+      });
+      setConnectionMessage("Connection tested and saved.");
+      await load();
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : "The connection did not save.";
+      throw new Error(message);
+    } finally {
+      setSavingConnection(false);
+    }
+  };
   return (
     <DashboardView
       data={data}
@@ -147,6 +168,7 @@ function RoutingDashboard({ threadId }: { threadId?: string }) {
         void loadModels();
       }}
       onSaveConnection={saveConnection}
+      onSaveJevConnection={saveJevConnection}
       onDays={setDays}
       onBaseline={setBaseline}
       onRefresh={() => {

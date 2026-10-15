@@ -785,3 +785,7 @@
   min-width: 0;
   text-overflow: ellipsis;
 }
+.ar-classifier-mode {
+  width: fit-content;
+  margin-bottom: 16px;
+}

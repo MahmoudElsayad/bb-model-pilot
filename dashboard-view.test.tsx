@@ -119,6 +119,7 @@ const props = (data: DashboardData | null): DashboardViewProps => ({
   onValidate() {},
   onThread() {},
   async onSaveConnection() {},
+  async onSaveJevConnection() {},
 });
 
 test("recorded usage separates cache from uncached input and describes estimate limits", () => {
@@ -136,23 +137,44 @@ test("recorded usage separates cache from uncached input and describes estimate 
   assert.doesNotMatch(html, /<script>/);
 });
 
-test("new users select from the BB catalog without entering an API key", () => {
+test("new users start on Jev with an API key field and can pick a BB model instead", () => {
   const data = fixture();
   data.setup = {
     configured: false,
     source: "missing",
     canValidate: false,
-    provider: "native",
-    model: "",
+    provider: "jev",
+    model: "jev-latest",
   };
   const html = renderToStaticMarkup(
     <DashboardView {...props(data)} nativeModels={catalog} />,
   );
-  assert.doesNotMatch(html, /type="password"|ar-classifier-key|Get a key/);
+  assert.match(html, /Connect Jev/);
+  assert.match(html, /aria-pressed="true"[^>]*>Jev</);
+  assert.match(html, /aria-pressed="false"[^>]*>Model in BB</);
+  assert.match(html, /id="ar-classifier-key" type="password"/);
+  assert.match(html, /href="https:\/\/console.typesafe.ai"/);
+  assert.match(html, /aria-current="page">Connection/);
+  assert.match(html, /type="submit" disabled=""/);
+  assert.doesNotMatch(html, /Catalog model one/);
+});
+
+test("a saved Jev key can be kept when the connection is changed", () => {
+  const html = renderToStaticMarkup(
+    <ConnectionSetup {...connectionProps()} setup={fixture().setup} />,
+  );
+  assert.match(html, /placeholder="Saved. Enter a new key to replace it."/);
+  assert.match(html, /Leave the field empty to keep the saved key/);
+  assert.doesNotMatch(html, /type="submit" disabled=""/);
+});
+
+test("users who chose a BB model keep the catalog without an API key", () => {
+  const html = renderToStaticMarkup(
+    <ConnectionSetup {...connectionProps()} />,
+  );
+  assert.doesNotMatch(html, /type="password"|ar-classifier-key/);
   assert.match(html, /No additional API key/);
   assert.match(html, /optgroup label="Connected Codex"/);
-  assert.match(html, /Catalog model one/);
-  assert.match(html, /aria-current="page">Connection/);
   assert.match(html, /existing plan usage/);
   assert.match(html, /current connection stays active/);
 });
@@ -217,7 +239,12 @@ const catalog = [
   },
 ] satisfies DashboardViewProps["nativeModels"];
 const connectionProps = () => ({
-  setup: fixture().setup,
+  setup: {
+    ...fixture().setup,
+    provider: "native",
+    nativeProvider: "codex",
+    model: "",
+  } satisfies DashboardData["setup"],
   models: catalog,
   loading: false,
   error: null,
@@ -225,6 +252,7 @@ const connectionProps = () => ({
   saving: false,
   onRefresh() {},
   async onSave() {},
+  async onSaveJev() {},
 });
 
 test("connection catalog uses provider groups and no hardcoded model names", () => {

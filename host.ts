@@ -990,11 +990,7 @@ async function savedConfiguration(dataDir: string): Promise<ClassifierConfig> {
       JSON.parse(await readFile(configurationFile(dataDir), "utf8")),
     );
   } catch {
-    const file = credentialFile(dataDir);
-    const legacy =
-      (await savedKey(dataDir, "jev")) ||
-      (await readFile(`${file}.op-reference`, "utf8").catch(() => ""));
-    return defaultClassifierConfig(legacy ? "jev" : "native");
+    return defaultClassifierConfig("jev");
   }
 }
 async function readClassifierKey(

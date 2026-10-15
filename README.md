@@ -21,8 +21,77 @@ Start with ordinary tasks and compare the results before you depend on a classif
 
 ## Install
 
-Version 0.4.1 is an experimental BB plugin for BB 0.46 on macOS.
+Version 0.4.2 is an experimental BB plugin for BB 0.46 on macOS.
 It uses internal BB provider bridges, so a BB update can break compatibility.
+Other platforms and BB versions do not have verified support.
+Native classification was tested with Codex CLI 0.162.1 and Claude Code 2.1.300 command interfaces.
+Older command-line versions can reject the required isolation flags.
+Make sure that your BB version matches before installation.
+Coding model access depends on your Codex and Claude Code accounts.
+
+Install the tagged release in BB with this command.
+
+```sh
+bb plugin install 'git:https://github.com/MahmoudElsayad/bb-model-pilot.git@^0.4.0'
+```
+
+Add the publisher catalog to discover Model Pilot in BB before Community marketplace review finishes.
+
+```sh
+bb marketplace add git:https://github.com/MahmoudElsayad/bb-model-pilot.git@main
+```
+
+The BB Community marketplace submission is pending.
+Direct Git installation does not depend on marketplace approval.
+The source uses the MIT license and accepts contributions through GitHub pull requests.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before you make a change.
+
+## Connect a classifier
+
+Jev is the default classifier.
+It needs a TypeSafe API key and uses its own API billing.
+You can choose a model already in BB instead.
+
+To connect Jev:
+
+1. Get a key from the [TypeSafe console](https://console.typesafe.ai).
+2. Open Model Pilot in the BB navigation.
+3. Open Connection.
+4. If a connection already exists, select Change connection.
+5. Keep Jev selected and paste the key into Jev API key.
+6. Select Connect and test.
+7. Create a BB thread and select Model Pilot.
+
+Model Pilot saves the key as a secret plugin setting.
+The page receives connection status, not the saved key.
+To keep a saved key when you change the connection, leave the field empty.
+
+To use a model already in BB:
+
+1. Sign in to Codex or Claude Code through BB.
+2. On the Connection page, select Model in BB.
+3. Choose a Classification model.
+4. Select Connect and test.
+
+Native classification runs through the installed Codex or Claude Code command-line program with your existing sign-in.
+It needs no separate API key.
+The model list reflects the provider catalog that BB exposes.
+An entry in that catalog does not guarantee account access or available quota.
+The connection test consumes provider usage and can encounter subscription limits.
+Model Pilot does not include extra credits or bypass provider limits.
+The Guide tab explains routing, helpers, privacy, and usage inside BB.
+
+## Classifier choices
+
+Jev retains the original routing policy's TypeSafe judgments and probabilities.
+Its model is `jev-latest`.
+Native Codex and Claude Code classification returns choices for the same routing categories.
+For native classification, a smaller available model limits classification overhead.
+A model's routing quality depends on the tasks and the provider's responses.
+Successful connection tests establish a working response, not equivalent routing quality across models.
+
+The legacy direct OpenAI and Anthropic API adapters require separate API keys through BB plugin settings.
+They use fixed official endpoints and structured response formats.
 Other platforms and BB versions do not have verified support.
 Native classification was tested with Codex CLI 0.162.1 and Claude Code 2.1.300 command interfaces.
 Older command-line versions can reject the required isolation flags.

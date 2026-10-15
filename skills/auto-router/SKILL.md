@@ -13,10 +13,12 @@ Use those identifiers when operating the plugin.
 ## Connect and explain
 
 Open Model Pilot in the BB navigation.
-The normal setup uses BB's available Codex and Claude Code models for classification.
 The classifier is the model that chooses how the task runs.
+Jev is the default classifier.
+It uses a separate TypeSafe API key, which the user pastes into Jev API key on the Connection page.
 If a connection already exists, select Change connection.
-Choose a Classification model and select Connect and test.
+Keep Jev selected, enter the key, and select Connect and test.
+To use a BB model instead, select Model in BB, choose a Classification model, and select Connect and test.
 Native classification uses the installed Codex or Claude Code command-line program with the existing provider sign-in.
 It needs no separate API key.
 Provider subscription limits, model access, and quota still apply.
@@ -27,14 +29,13 @@ The plugin removes that directory after the request.
 A crash can interrupt cleanup.
 Provider retention follows the provider's own policy.
 
-Legacy API modes remain available through BB plugin settings.
-Jev uses a separate TypeSafe API key.
-Direct OpenAI and Anthropic API modes also need separate API keys and API credit.
+Jev has its own API billing.
+Legacy direct OpenAI and Anthropic API modes also need separate API keys and API credit.
 Do not claim that a coding subscription supplies credit for those API modes.
 The page never returns a saved key.
 Never request or print a credential in chat, task text, logs, screenshots, or command arguments.
 
-Existing Jev configuration can use `JEV_API_KEY` or an explicitly configured 1Password reference.
+Jev can also read `JEV_API_KEY` or an explicitly configured 1Password reference.
 Do not replace an existing working connection without an instruction to change it.
 If a connection fails, explain the provider error without disclosing secrets.
 Distinguish missing CLI login, insufficient quota, offline host, unsupported model, and an invalid optional API key.

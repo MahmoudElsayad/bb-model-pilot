@@ -600,7 +600,8 @@ test("failed BB classifier connection preserves the saved selection", async () =
       }),
     );
     const status = await harness.callRpc("setupStatus", {});
-    assert.equal(Reflect.get(status!, "model"), "");
+    assert.equal(Reflect.get(status!, "provider"), "jev");
+    assert.equal(Reflect.get(status!, "model"), "jev-latest");
   } finally {
     await harness.dispose();
   }

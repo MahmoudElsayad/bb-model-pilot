@@ -30,6 +30,7 @@ export type DashboardViewProps = {
   onSaveConnection: (
     connection: Pick<NativeModel, "providerId" | "modelId">,
   ) => Promise<void>;
+  onSaveJevConnection: (key: string | undefined) => Promise<void>;
   onDays: (days: DashboardDays) => void;
   onBaseline: (model: string) => void;
   onRefresh: () => void;
@@ -252,6 +253,8 @@ function TokenBreakdown({ data }: { data: DashboardData }) {
 const modelKey = (model: Pick<NativeModel, "providerId" | "modelId">) =>
   JSON.stringify([model.providerId, model.modelId]);
 
+export type ClassifierMode = "jev" | "native";
+
 export function ConnectionSetup({
   setup,
   models,
@@ -261,6 +264,7 @@ export function ConnectionSetup({
   saving,
   onRefresh,
   onSave,
+  onSaveJev,
   onCancel,
 }: {
   setup: DashboardData["setup"];
@@ -273,16 +277,32 @@ export function ConnectionSetup({
   onSave: (
     connection: Pick<NativeModel, "providerId" | "modelId">,
   ) => Promise<void>;
+  onSaveJev: (key: string | undefined) => Promise<void>;
   onCancel?: () => void;
 }) {
+  const [mode, setMode] = useState<ClassifierMode>(
+    setup.provider === "native" ? "native" : "jev",
+  );
   const [selectedKey, setSelectedKey] = useState(
     setup.provider === "native" && setup.nativeProvider && setup.model
       ? modelKey({ providerId: setup.nativeProvider, modelId: setup.model })
       : "",
   );
+  const [jevKey, setJevKey] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const selected = models.find((model) => modelKey(model) === selectedKey);
   const providers = [...new Set(models.map((model) => model.providerId))];
+  const hasJevKey = setup.provider === "jev" && setup.configured;
+  const canSubmit =
+    mode === "jev"
+      ? hasJevKey || jevKey.trim().length > 0
+      : Boolean(selected) && !loading;
+  const fail = (cause: unknown) =>
+    setFormError(
+      cause instanceof Error
+        ? cause.message
+        : "The connection did not save. Try again.",
+    );
   return (
     <section
       className="ar-setup ar-connect-panel"
@@ -290,116 +310,208 @@ export function ConnectionSetup({
     >
       <div className="ar-connect-copy">
         <div className="ar-eyebrow">Classifier connection</div>
-        <h2 id="ar-setup-title">Use a model already in BB</h2>
+        <h2 id="ar-setup-title">
+          {mode === "jev" ? "Connect Jev" : "Use a model already in BB"}
+        </h2>
         <p>
           A classifier is the model that chooses how your task runs. It selects
           your working model and reasoning effort, then advises when helpers are
           useful.
         </p>
-        <p>Use models already connected to BB. No additional API key.</p>
-        <div className="ar-privacy-note">
-          <h3>Your existing connection</h3>
-          <p>
-            This list comes from the same provider catalog that BB uses. The
-            selected provider receives task text and routing criteria through
-            your existing BB sign-in.
-          </p>
-          <p>Your subscription limits and provider usage rules still apply.</p>
-        </div>
+        {mode === "jev" ? (
+          <>
+            <p>
+              Jev is the default classifier. It returns calibrated probabilities
+              for each routing choice.
+            </p>
+            <div className="ar-privacy-note">
+              <h3>Your Jev key</h3>
+              <p>
+                Jev uses a TypeSafe API key and its own API billing. Model Pilot
+                saves the key as a secret plugin setting.
+              </p>
+              <p>Jev receives task text and routing criteria.</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <p>Use models already connected to BB. No additional API key.</p>
+            <div className="ar-privacy-note">
+              <h3>Your existing connection</h3>
+              <p>
+                This list comes from the same provider catalog that BB uses. The
+                selected provider receives task text and routing criteria
+                through your existing BB sign-in.
+              </p>
+              <p>
+                Your subscription limits and provider usage rules still apply.
+              </p>
+            </div>
+          </>
+        )}
       </div>
       <form
         className="ar-setup-form ar-connect-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!selected || loading || saving) return;
+          if (!canSubmit || saving) return;
           setFormError(null);
+          if (mode === "jev") {
+            const key = jevKey.trim();
+            void onSaveJev(key || undefined)
+              .then(() => setJevKey(""))
+              .catch(fail);
+            return;
+          }
+          if (!selected) return;
           void onSave({
             providerId: selected.providerId,
             modelId: selected.modelId,
-          }).catch((cause: unknown) =>
-            setFormError(
-              cause instanceof Error
-                ? cause.message
-                : "The connection did not save. Try again.",
-            ),
-          );
+          }).catch(fail);
         }}
       >
-        <div className="ar-model-picker-head">
-          <label htmlFor="ar-classifier-model">Classification model</label>
-          <button
-            type="button"
-            className="ar-text-button"
-            onClick={onRefresh}
-            disabled={loading || saving}
-          >
-            {loading ? "Refreshing models…" : "Refresh models"}
-          </button>
+        <div
+          className="ar-segment ar-classifier-mode"
+          role="group"
+          aria-label="Classifier"
+        >
+          {(
+            [
+              ["jev", "Jev"],
+              ["native", "Model in BB"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={mode === value}
+              disabled={saving}
+              onClick={() => {
+                setMode(value);
+                setFormError(null);
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        {loading && <p role="status">Loading models from BB…</p>}
-        {error && (
-          <div className="ar-form-error" role="alert">
-            <p>{error}</p>
+        {mode === "jev" ? (
+          <>
+            <label htmlFor="ar-classifier-key">Jev API key</label>
+            <div className="ar-password-field">
+              <input
+                id="ar-classifier-key"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={jevKey}
+                disabled={saving}
+                placeholder={
+                  hasJevKey ? "Saved. Enter a new key to replace it." : ""
+                }
+                aria-describedby="ar-key-help"
+                onChange={(event) => {
+                  setJevKey(event.currentTarget.value);
+                  setFormError(null);
+                }}
+              />
+            </div>
+            <p id="ar-key-help">
+              Get a key from the{" "}
+              <a
+                href="https://console.typesafe.ai"
+                target="_blank"
+                rel="noreferrer"
+              >
+                TypeSafe console
+              </a>
+              .{" "}
+              {hasJevKey
+                ? "Leave the field empty to keep the saved key."
+                : "The connection test makes sure that the key works."}
+            </p>
+          </>
+        ) : (
+          <>
+          <div className="ar-model-picker-head">
+            <label htmlFor="ar-classifier-model">Classification model</label>
             <button
               type="button"
               className="ar-text-button"
               onClick={onRefresh}
               disabled={loading || saving}
             >
-              Try again
+              {loading ? "Refreshing models…" : "Refresh models"}
             </button>
           </div>
-        )}
-        <select
-          id="ar-classifier-model"
-          value={selected ? selectedKey : ""}
-          disabled={loading || saving || models.length === 0}
-          aria-describedby="ar-model-help"
-          required
-          onChange={(event) => {
-            setSelectedKey(event.currentTarget.value);
-            setFormError(null);
-          }}
-        >
-          <option value="" disabled>
-            Select a model from BB
-          </option>
-          {providers.map((providerId) => (
-            <optgroup
-              key={providerId}
-              label={
-                models.find((model) => model.providerId === providerId)
-                  ?.providerLabel ?? providerId
-              }
-            >
-              {models
-                .filter((model) => model.providerId === providerId)
-                .map((model) => (
-                  <option key={modelKey(model)} value={modelKey(model)}>
-                    {model.label}
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </select>
-        <p id="ar-model-help">
-          {selected?.description ||
-            "Choose a fast model for routing decisions. The connection test makes sure that your existing sign-in can use it."}
-        </p>
-        {!loading && !error && models.length === 0 && (
-          <div className="ar-model-empty" role="status">
-            <p>No models are available from BB on this host.</p>
-            <p>Connect an agent provider in BB, then refresh this list.</p>
-          </div>
-        )}
-        {warnings.map((warning) => (
-          <p className="ar-caption" key={warning}>
-            {warning}
+          {loading && <p role="status">Loading models from BB…</p>}
+          {error && (
+            <div className="ar-form-error" role="alert">
+              <p>{error}</p>
+              <button
+                type="button"
+                className="ar-text-button"
+                onClick={onRefresh}
+                disabled={loading || saving}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+          <select
+            id="ar-classifier-model"
+            value={selected ? selectedKey : ""}
+            disabled={loading || saving || models.length === 0}
+            aria-describedby="ar-model-help"
+            required
+            onChange={(event) => {
+              setSelectedKey(event.currentTarget.value);
+              setFormError(null);
+            }}
+          >
+            <option value="" disabled>
+              Select a model from BB
+            </option>
+            {providers.map((providerId) => (
+              <optgroup
+                key={providerId}
+                label={
+                  models.find((model) => model.providerId === providerId)
+                    ?.providerLabel ?? providerId
+                }
+              >
+                {models
+                  .filter((model) => model.providerId === providerId)
+                  .map((model) => (
+                    <option key={modelKey(model)} value={modelKey(model)}>
+                      {model.label}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+          </select>
+          <p id="ar-model-help">
+            {selected?.description ||
+              "Choose a fast model for routing decisions. The connection test makes sure that your existing sign-in can use it."}
           </p>
-        ))}
+          {!loading && !error && models.length === 0 && (
+            <div className="ar-model-empty" role="status">
+              <p>No models are available from BB on this host.</p>
+              <p>Connect an agent provider in BB, then refresh this list.</p>
+            </div>
+          )}
+          {warnings.map((warning) => (
+            <p className="ar-caption" key={warning}>
+              {warning}
+            </p>
+          ))}
+          </>
+        )}
         <p className="ar-paid-note">
-          Connect and test uses your existing plan usage. Your current
-          connection stays active until the new connection passes.
+          {mode === "jev"
+            ? "Connect and test sends one request to Jev on your API billing."
+            : "Connect and test uses your existing plan usage."}{" "}
+          Your current connection stays active until the new connection passes.
         </p>
         {formError && (
           <div className="ar-form-error" role="alert">
@@ -410,7 +522,7 @@ export function ConnectionSetup({
           <button
             className="ar-button ar-button-primary"
             type="submit"
-            disabled={saving || loading || !selected}
+            disabled={saving || !canSubmit}
           >
             {saving ? "Testing connection…" : "Connect and test"}
           </button>
@@ -541,9 +653,9 @@ export function PilotGuide() {
             still apply.
           </p>
           <p>
-            An earlier Jev connection can remain active until you switch to a BB
-            model. The new model passes a connection test before it replaces
-            that connection.
+            Jev is the default classifier and uses its own API key and billing.
+            You can choose a model already in BB instead. A new connection
+            passes a connection test before it replaces the current one.
           </p>
         </div>
       </details>
@@ -587,6 +699,7 @@ export function DashboardView({
   savingConnection,
   onRefreshModels,
   onSaveConnection,
+  onSaveJevConnection,
   onDays,
   onBaseline,
   onRefresh,
@@ -713,6 +826,11 @@ export function DashboardView({
                     setEditingConnection(false);
                     setSelectedPage("connection");
                   }}
+                  onSaveJev={async (key) => {
+                    await onSaveJevConnection(key);
+                    setEditingConnection(false);
+                    setSelectedPage("connection");
+                  }}
                   onCancel={
                     setup.configured
                       ? () => setEditingConnection(false)
@@ -729,7 +847,9 @@ export function DashboardView({
                   <p>
                     {setup.provider === "native"
                       ? "The saved model uses your existing BB sign-in. Test the connection to make sure that it can answer now."
-                      : "An earlier API connection is active. Choose a BB model to use your existing agent sign-in without another API key."}
+                      : setup.provider === "jev"
+                        ? "Jev classifies your tasks with its saved API key. Test the connection to make sure that it can answer now."
+                        : "An earlier API connection is active. Choose Jev or a BB model to replace it."}
                   </p>
                   <dl className="ar-data-list">
                     <div>
@@ -740,17 +860,21 @@ export function DashboardView({
                               (model) =>
                                 model.providerId === setup.nativeProvider,
                             )?.providerLabel ?? setup.nativeProvider)
-                          : setup.provider}
+                          : setup.provider === "jev"
+                            ? "Jev (TypeSafe)"
+                            : setup.provider}
                       </dd>
                     </div>
                     <div>
                       <dt>Model</dt>
                       <dd>
-                        {nativeModels.find(
-                          (model) =>
-                            model.providerId === setup.nativeProvider &&
-                            model.modelId === setup.model,
-                        )?.label ?? setup.model}
+                        {setup.provider === "native"
+                          ? (nativeModels.find(
+                              (model) =>
+                                model.providerId === setup.nativeProvider &&
+                                model.modelId === setup.model,
+                            )?.label ?? setup.model)
+                          : setup.model}
                       </dd>
                     </div>
                     <div>
@@ -758,14 +882,20 @@ export function DashboardView({
                       <dd>
                         {setup.provider === "native"
                           ? "Existing BB sign-in"
-                          : "Earlier API connection"}
+                          : setup.provider !== "jev"
+                            ? "Earlier API connection"
+                            : setup.source === "setting"
+                              ? "API key in plugin settings"
+                              : "Saved key on this machine"}
                       </dd>
                     </div>
                   </dl>
                   <p className="ar-paid-note">
                     {setup.provider === "native"
                       ? "The connection test uses your existing plan usage. Subscription limits still apply."
-                      : "Testing this earlier connection uses its existing API billing. Switch to a BB model to use your agent connection instead."}
+                      : setup.provider === "jev"
+                        ? "The connection test sends one request to Jev on your API billing."
+                        : "Testing this earlier connection uses its existing API billing."}
                   </p>
                   <div className="ar-form-actions">
                     <button

@@ -4,20 +4,25 @@ Model Pilot adds AI model routing and automatic model selection to coding agents
 It chooses a main model, assigns focused helper work, and shows token usage with cost estimates.
 It supports Codex and Claude Code through your existing agent sign-ins.
 
-Version 0.4.1 is experimental and targets BB 0.46 on macOS.
+Version 0.4.2 is experimental and targets BB 0.46 on macOS.
 It uses internal BB provider bridges, so a BB update can break compatibility.
 Other platforms and BB versions do not have verified support.
 Coding model availability depends on your provider accounts.
 
 ## Connect and start
 
-Sign in to Codex or Claude Code through BB.
+Get a Jev key from the TypeSafe console.
 Open Model Pilot in the BB navigation, then open Connection.
 If a connection already exists, select Change connection.
-Choose a Classification model and select Connect and test.
+Keep Jev selected, paste the key, and select Connect and test.
 After a successful connection, create a BB thread and select Model Pilot.
 
 A classifier is the model that selects how the task runs.
+Jev is the default classifier.
+It uses a separate TypeSafe API key and API billing.
+Model Pilot saves the key as a secret plugin setting.
+
+You can select Model in BB to use a Codex or Claude Code model instead.
 Native BB classification uses your existing agent sign-ins without a separate API key.
 The model list comes from BB's Codex and Claude Code provider catalogs.
 Catalog availability does not guarantee account access or quota.
@@ -25,9 +30,7 @@ Connection tests and classification consume provider usage.
 Your provider subscription limits still apply.
 The plugin includes no extra credits and does not bypass those limits.
 
-Existing Jev configuration remains an advanced mode through BB plugin settings with a separate TypeSafe API key.
 Legacy direct OpenAI and Anthropic API modes also use separate API keys and billing.
-Native BB models do not need those keys.
 
 ## How it works
 
