@@ -14,7 +14,7 @@ const questions = {
     criteria: { main: "One task", plan: "Several tasks" },
   },
 };
-const openaiReply = (answer: unknown = { shape: "main" }) => ({
+const openaiReply = (answer: unknown = { shape: { main: 70, plan: 30 } }) => ({
   status: "completed",
   output: [
     {
@@ -28,7 +28,7 @@ const openaiReply = (answer: unknown = { shape: "main" }) => ({
     input_tokens_details: { cached_tokens: 20 },
   },
 });
-const anthropicReply = (answer: unknown = { shape: "plan" }) => ({
+const anthropicReply = (answer: unknown = { shape: { main: 20, plan: 80 } }) => ({
   stop_reason: "tool_use",
   content: [{ type: "tool_use", name: "routing_decisions", input: answer }],
   usage: { input_tokens: 60, output_tokens: 7, cache_read_input_tokens: 20 },
@@ -74,7 +74,13 @@ test("OpenAI uses a constrained response schema and records its real usage with 
     },
   });
   const reply = await ask("task", questions);
-  assert.deepEqual(reply.answers, { shape: { choice: "main", confidence: 1 } });
+  assert.deepEqual(reply.answers, {
+    shape: {
+      choice: "main",
+      confidence: 0.7,
+      probabilities: { main: 0.7, plan: 0.3 },
+    },
+  });
   assert.equal(reply.jev.inputTokens, 80);
   assert.equal(reply.jev.classifier?.outputTokens, 8);
   assert.equal(reply.jev.classifier?.cacheReadInputTokens, 20);
@@ -82,11 +88,14 @@ test("OpenAI uses a constrained response schema and records its real usage with 
     reply.jev.classifier?.estimatedUsd,
     (60 * 0.2 + 20 * 0.02 + 8 * 1.2) / 1_000_000,
   );
-  assert.equal(reply.jev.classifier?.confidenceKind, "categorical");
+  assert.equal(reply.jev.classifier?.confidenceKind, "estimated");
   assert.equal(JSON.stringify(reply).includes("private-key"), false);
   assert.deepEqual(sent?.reasoning, { effort: "none" });
   assert.equal(sent?.store, false);
-  assert.match(JSON.stringify(sent?.text), /"enum":\["main","plan"\]/);
+  assert.match(
+    JSON.stringify(sent?.text),
+    /"required":\["main","plan"\],"additionalProperties":false/,
+  );
 });
 
 test("Haiku returns exact tool choices and adds cache input only once", async () => {
@@ -106,6 +115,7 @@ test("Haiku returns exact tool choices and adds cache input only once", async ()
   });
   const reply = await ask("task", questions);
   assert.equal(reply.answers?.shape?.choice, "plan");
+  assert.equal(reply.answers?.shape?.probabilities?.plan, 0.8);
   assert.equal(reply.jev.inputTokens, 80);
   assert.equal(reply.jev.classifier?.outputTokens, 7);
   assert.equal(reply.jev.classifier?.provider, "anthropic");
@@ -116,10 +126,13 @@ test("Haiku returns exact tool choices and adds cache input only once", async ()
 });
 
 for (const [label, value] of [
-  ["unknown choice", { shape: "malicious-model" }],
-  ["missing choice", {}],
-  ["extra choice", { shape: "main", other: "main" }],
-  ["wrong choice type", { shape: 4 }],
+  ["unknown choice", { shape: { main: 50, "malicious-model": 50 } }],
+  ["missing question", {}],
+  ["extra question", { shape: { main: 100, plan: 0 }, other: { main: 100 } }],
+  ["single choice instead of a vote", { shape: "main" }],
+  ["missing choice in a vote", { shape: { main: 100 } }],
+  ["empty vote", { shape: { main: 0, plan: 0 } }],
+  ["out-of-range percent", { shape: { main: 150, plan: 0 } }],
 ] as const) {
   test(`both providers reject ${label} rather than accept a partial decision`, async () => {
     for (const provider of ["openai", "anthropic"] as const) {

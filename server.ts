@@ -1017,8 +1017,14 @@ export default async function plugin(
             },
           ],
           async run(input, ctx) {
+            const ask = askOnHost(await cliHostId(ctx.threadId), ctx.signal);
+            let answers: Awaited<ReturnType<JevAsk>>["answers"] = null;
             const routePreview = makeThreadRouter({
-              ask: askOnHost(await cliHostId(ctx.threadId), ctx.signal),
+              ask: async (state, questions) => {
+                const reply = await ask(state, questions);
+                answers = reply.answers;
+                return reply;
+              },
               record: async (threadId, record) => {
                 await bb.storage.kv.set(`preview:${threadId}`, record);
               },
@@ -1043,11 +1049,9 @@ export default async function plugin(
                           result.route.source === "fallback"
                             ? "fallback"
                             : classifier.provider,
-                        ...(classifier.provider === "jev"
-                          ? {}
-                          : { confidence: undefined, vote: undefined }),
                       }
                     : null,
+                  answers,
                 },
                 null,
                 2,

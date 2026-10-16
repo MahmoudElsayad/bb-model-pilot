@@ -4,7 +4,7 @@ Model Pilot adds AI model routing and automatic model selection to coding agents
 It chooses a main model, assigns focused helper work, and shows token usage with cost estimates.
 It supports Codex and Claude Code through your existing agent sign-ins.
 
-Version 0.4.2 is experimental and targets BB 0.46 on macOS.
+Version 0.4.3 is experimental and targets BB 0.46 on macOS.
 It uses internal BB provider bridges, so a BB update can break compatibility.
 Other platforms and BB versions do not have verified support.
 Coding model availability depends on your provider accounts.
@@ -40,9 +40,13 @@ The classifier then chooses direct work, a helper, or a plan.
 Helpers receive focused task briefs in separate contexts and return results to the main agent.
 The main agent remains responsible for the final result.
 
-Jev retains the original TypeSafe classification policy.
-Other classifiers return choices for the same routing categories.
-Those choices do not reproduce Jev's calibrated probabilities or prove equivalent routing quality.
+Jev retains the original TypeSafe classification questions.
+Each classifier returns a percent vote over the choices for every routing question.
+Model Pilot picks the cheapest model, effort, and context window that the vote makes at least 65% likely to be enough.
+This avoids a model too weak for the task and a stronger model than the task needs.
+Jev's votes are calibrated probabilities.
+Other classifiers estimate their own percents, so the same rule can give different routes.
+Matching votes do not prove equivalent routing quality.
 
 ## Understand usage and costs
 

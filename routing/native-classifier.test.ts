@@ -73,7 +73,7 @@ ${script}`,
 }
 test("native classification parses exact choices and actual usage then removes temporary sessions", async () => {
   await withFakeCli(
-    `process.stdin.resume();process.stdin.on('end',()=>{console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'{"connection":"connected"}'}}));console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:43,cached_input_tokens:12,output_tokens:9}}));});`,
+    `process.stdin.resume();process.stdin.on('end',()=>{console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'{"connection":{"connected":100}}'}}));console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:43,cached_input_tokens:12,output_tokens:9}}));});`,
     async (directory) => {
       const result = await makeNativeClassifierAsk(configuration, {
         dataDir: directory,
@@ -87,7 +87,7 @@ test("native classification parses exact choices and actual usage then removes t
 });
 test("native classification rejects unknown choices without guessing", async () => {
   await withFakeCli(
-    `process.stdin.resume();process.stdin.on('end',()=>console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'{"connection":"unknown"}'}})));`,
+    `process.stdin.resume();process.stdin.on('end',()=>console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'{"connection":{"unknown":100}}'}})));`,
     async (directory) => {
       const result = await makeNativeClassifierAsk(configuration, {
         dataDir: directory,
@@ -121,4 +121,25 @@ test("native classification terminates a timed-out process and removes its priva
       assert.ok(result.jev.ms < 3000);
     },
   );
+});
+
+test("native classification passes the user name the Claude CLI needs to find its login", async () => {
+  const original = { USER: process.env.USER, LOGNAME: process.env.LOGNAME };
+  process.env.USER = "pilot-user";
+  process.env.LOGNAME = "pilot-user";
+  try {
+    await withFakeCli(
+      `process.stdin.resume();process.stdin.on('end',()=>console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:process.env.USER==='pilot-user'&&process.env.LOGNAME==='pilot-user'?'{"connection":{"connected":100}}':'{}'}})));`,
+      async (directory) => {
+        const result = await makeNativeClassifierAsk(configuration, {
+          dataDir: directory,
+        })("test", questions);
+        assert.equal(result.answers?.connection?.choice, "connected");
+      },
+    );
+  } finally {
+    for (const [key, value] of Object.entries(original))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  }
 });

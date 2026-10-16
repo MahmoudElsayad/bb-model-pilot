@@ -101,7 +101,11 @@ export const classifierMetadataSchema = z
     outputTokens: z.number().finite().nonnegative(),
     cacheReadInputTokens: z.number().finite().nonnegative(),
     estimatedUsd: z.number().finite().nonnegative().nullable(),
-    confidenceKind: z.enum(["vote", "categorical"]),
+    /**
+     * "vote" is Jev's calibrated probability; "estimated" is a model's own percent vote;
+     * "categorical" is a single pick, recorded before classifiers voted.
+     */
+    confidenceKind: z.enum(["vote", "estimated", "categorical"]),
   })
   .strict();
 export type ClassifierMetadata = z.infer<typeof classifierMetadataSchema>;

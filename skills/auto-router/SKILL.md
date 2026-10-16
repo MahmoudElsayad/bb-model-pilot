@@ -54,9 +54,10 @@ Follow plan dependencies before starting each step.
 The main agent remains responsible for the final result.
 Helpers inherit the parent's permission mode.
 
-Jev retains the original TypeSafe classification policy.
-Other classifiers return choices for the same routing categories.
-Do not describe those choices as Jev's calibrated probabilities or claim equivalent decision quality.
+Every classifier returns a percent vote, and Model Pilot picks the cheapest model, effort, and context window that the vote makes at least 65% likely to be enough.
+Jev's votes are calibrated probabilities.
+Other classifiers estimate their own percents.
+Do not describe those percents as calibrated or claim equivalent decision quality.
 If classification fails, the policy can use an Opus medium fallback.
 Explain that the fallback can cost more and still needs native provider access.
 

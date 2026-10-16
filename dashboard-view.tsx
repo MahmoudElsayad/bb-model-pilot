@@ -605,9 +605,11 @@ export function PilotGuide() {
             model can make routing decisions with less delay and plan usage.
           </p>
           <p>
-            Models can make different decisions against the same task criteria.
-            Their categorical choices are not equivalent confidence
-            measurements.
+            Every classifier returns a percent vote. Model Pilot picks the
+            cheapest model, effort, and context window that the vote makes at
+            least 65% likely to be enough. Jev's votes are calibrated. Other
+            models estimate their own percents, so they are not equivalent
+            confidence measurements.
           </p>
           <p>
             The classifier chooses the route. Codex and Claude Code run the

@@ -21,7 +21,7 @@ Start with ordinary tasks and compare the results before you depend on a classif
 
 ## Install
 
-Version 0.4.2 is an experimental BB plugin for BB 0.46 on macOS.
+Version 0.4.3 is an experimental BB plugin for BB 0.46 on macOS.
 It uses internal BB provider bridges, so a BB update can break compatibility.
 Other platforms and BB versions do not have verified support.
 Native classification was tested with Codex CLI 0.162.1 and Claude Code 2.1.300 command interfaces.
@@ -157,6 +157,13 @@ Reasoning effort controls how much reasoning the model attempts.
 The context window limits the conversation that the model can receive.
 Later messages retain the main model and its conversation history.
 The classifier then chooses direct work, a helper, or a routed plan.
+
+The classifier returns a percent vote over the choices for every routing question.
+Model Pilot picks the cheapest model, effort, and context window that the vote makes at least 65% likely to be enough.
+The same rule picks helper models.
+This avoids a model too weak for the task and a stronger model than the task needs.
+Jev's votes are calibrated probabilities.
+Codex, Claude Code, OpenAI, and Anthropic classifiers estimate their own percents.
 
 A helper is a separate agent with a focused task.
 It starts with its own context and receives a task brief rather than the complete parent conversation.
