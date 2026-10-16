@@ -230,7 +230,11 @@ export function pickEnough(answer: Choice | undefined, options: object): Pick | 
  */
 export function pickModel(answer: Choice | undefined, options: object): Pick | undefined {
   if (answer === undefined) return undefined;
-  const models = Object.keys(options).flatMap((model) => {
+  // A model the vote leaves out was not offered, as on a blocked account, so it cannot be picked.
+  const offered = Object.keys(options).filter(
+    (model) => answer.probabilities === undefined || Object.hasOwn(answer.probabilities, model),
+  );
+  const models = offered.flatMap((model) => {
     const info = modelInfo(model);
     return info === undefined ? [] : [{ model, info, vote: answer.probabilities?.[model] ?? 0 }];
   });

@@ -199,3 +199,26 @@ test("the Codex read keeps the app server's input open until it answers", async 
   });
   assert.deepEqual(result, { rateLimits: {} });
 });
+
+test("a blocked Codex account never gets a helper, even the cheapest one", async () => {
+  // Jev's vote from a real routed task: Haiku for the helper, with GPT models left out of the question.
+  const ask: JevAsk = async (_state, questions) => {
+    const answers = Object.fromEntries(
+      Object.entries(questions).map(([name, question]) => {
+        const options = Object.keys(question.criteria);
+        const choice = name === "shape" ? "helper" : name === "helperModel" ? "claude-haiku-4-5-20251001" : options[0]!;
+        const probabilities = Object.fromEntries(options.map((option) => [option, option === choice ? 0.99 : 0.01 / (options.length - 1)]));
+        return [name, { choice, confidence: 0.99, probabilities }];
+      }),
+    );
+    return { answers, jev: { isAnswered: true, ms: 1, inputTokens: 0, keyMs: 0 } } satisfies JevReply;
+  };
+  const route = makeThreadRouter({
+    ask: withUsage(ask, async () => [codexBlocked, claudeAllowed], () => NOW),
+    record: async () => {},
+    lastRoute: async () => undefined,
+  });
+  const reply = await route({ threadId: "thr_a", prompt: "Search Slack for ideas about classifying PDFs.", turn: "first" });
+  assert.equal(reply.delegation?.delegate, true);
+  assert.equal(reply.delegation?.helper?.model, "claude-haiku-4-5-20251001");
+});
