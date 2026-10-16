@@ -14,7 +14,10 @@ export type Route = {
   model: string;
   effort: Effort;
   window: Window;
-  /** The vote share of the deciding pick, 0 to 1. */
+  /**
+   * 0 to 1: for a model pick, the chance that the model is enough for the task; otherwise the
+   * vote share of the deciding pick.
+   */
   confidence: number;
   source: "jev" | "fallback";
   /** Jev's model vote as shares of the whole, when it picked the model. */
@@ -62,6 +65,16 @@ type Pick = { choice: string; probability: number };
 
 /** Used only when Jev returns no vote probabilities: below this confidence its choice is ignored. */
 const MIN_CONFIDENCE = 0.69;
+
+/**
+ * A model is enough for a task when the vote for it and every less capable model reaches this
+ * share. On twelve sample tasks, close calls that needed more than the cheapest model gave it
+ * 58% or less, and tasks it suited gave it 69% to 71%; Jev's votes moved about 2 points between
+ * runs. 0.65 sits between the two groups, so that noise does not flip either kind of task.
+ * Effort and context use the same share: on the same tasks it raised one open review question
+ * from medium to high effort, where the vote gave high 39%, and changed no context window.
+ */
+const ENOUGH_SHARE = 0.65;
 
 /** Prompt text sent to Jev is cut to this many characters. */
 const MAX_STATE_CHARS = 12_000;
@@ -187,6 +200,61 @@ export function pick(answer: Choice | undefined, options: object): Pick | undefi
     : undefined;
 }
 
+/**
+ * Jev's effort or context pick: the least option that is enough for the task, on a scale
+ * ordered least first. A vote for an option means the task needs at least that much, so the
+ * share up to an option is the chance that it is enough. With no probabilities, Jev's own
+ * choice counts only above MIN_CONFIDENCE.
+ */
+export function pickEnough(answer: Choice | undefined, options: object): Pick | undefined {
+  if (answer === undefined) return undefined;
+  const order = Object.keys(options);
+  const votes = order.map((option) => answer.probabilities?.[option] ?? 0);
+  const total = votes.reduce((sum, vote) => sum + vote, 0);
+  if (total === 0) return pick(answer, options);
+  let reached = 0;
+  for (const [i, option] of order.entries()) {
+    reached += votes[i]!;
+    if (reached / total >= ENOUGH_SHARE - 1e-9) return { choice: option, probability: reached / total };
+  }
+  return { choice: order.at(-1)!, probability: 1 };
+}
+
+/**
+ * Jev's model pick: the cheapest model that is enough for the task. Each vote names the least
+ * capable model that does the task well, so the share at or below a model's tier is the chance
+ * that the model is enough. Among models that reach ENOUGH_SHARE, the cheapest wins, then the
+ * more capable, then the one with the larger vote. This avoids both a model too weak for the
+ * task and a stronger one it does not need. With no probabilities, Jev's own choice counts
+ * only above MIN_CONFIDENCE.
+ */
+export function pickModel(answer: Choice | undefined, options: object): Pick | undefined {
+  if (answer === undefined) return undefined;
+  const models = Object.keys(options).flatMap((model) => {
+    const info = modelInfo(model);
+    return info === undefined ? [] : [{ model, info, vote: answer.probabilities?.[model] ?? 0 }];
+  });
+  const total = models.reduce((sum, { vote }) => sum + vote, 0);
+  if (total === 0) return pick(answer, options);
+  const enough = models
+    .map((candidate) => ({
+      ...candidate,
+      share:
+        models
+          .filter((other) => other.info.tier <= candidate.info.tier)
+          .reduce((sum, { vote }) => sum + vote, 0) / total,
+    }))
+    .filter(({ share }) => share >= ENOUGH_SHARE - 1e-9)
+    .sort(
+      (a, b) =>
+        outputPricePerMillion(a.info) - outputPricePerMillion(b.info) ||
+        b.info.tier - a.info.tier ||
+        b.vote - a.vote,
+    );
+  const best = enough[0]!;
+  return { choice: best.model, probability: best.share };
+}
+
 /** Jev's pick among unordered options: the largest share of the vote, or its own choice above the floor. */
 export function pickMost(answer: Choice | undefined, options: object): Pick | undefined {
   if (answer === undefined) return undefined;
@@ -228,9 +296,9 @@ export function routeFrom(
 ): Route {
   if (answers === null) return base;
 
-  const model = pick(answers.model, models);
-  const effort = pick(answers.effort, EFFORTS);
-  const window = pick(answers.window, WINDOWS);
+  const model = pickModel(answers.model, models);
+  const effort = pickEnough(answers.effort, EFFORTS);
+  const window = pickEnough(answers.window, WINDOWS);
   const deciding = model ?? effort ?? window;
   if (deciding === undefined) return base;
 

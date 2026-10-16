@@ -1,14 +1,14 @@
 {
   "source": "apps/server/src/routing",
   "sourceSha256": {
-    "core.ts": "12d97bcb6d619c11dd3e32b228febaf19b013c2dad8e74280f42895d2c8755c3",
+    "core.ts": "7822e8e72cd5fb009262f39a16831148686ec29a8019f49760fcd86fad4bc439",
     "models.ts": "fe1a7689674584d3fe25b25c3cf222b416212edb9dec5c44591566fd25cdc9ed",
     "jev.ts": "40055b8df5ef0f55cae8baa84a8637f75b6eac39dd51a6fd2a28e7d9ec548bcd",
     "router.ts": "4a3a7487fa1b96648713141dd942d390118dc5089718a1e0ae004d65ff854cb3",
     "plans.ts": "28d554e595dc53a8d12ca9650f1e4ed5a3478802a6c5c0c1a2c5791918710f97"
   },
   "changes": {
-    "core.ts": "Only ./models.ts import becomes ./models.js.",
+    "core.ts": "The ./models.ts import becomes ./models.js. Model, effort and context picks take the cheapest option whose vote share up to it reaches 0.65, instead of the weighted median. The hash records this local file.",
     "models.ts": "Unchanged.",
     "jev.ts": "Native Promise equivalent with Zod boundary decoding, secret-safe warnings and shared pending credential lookup.",
     "router.ts": "Native Promise first/later router with injected persistence. Same tables, questions, fallback and decision flow. Adds schemas.",

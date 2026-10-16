@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { makeJevAsk, KEY_RETRY_MS, type JevReply } from "./jev.js";
-import { FALLBACK_THREAD, makeThreadRouter, routeThread, type RouteRecord } from "./router.js";
-import { pick, planFrom, withStepStarted, withStepsDone, isPlanFinished, type Route } from "./core.js";
+import { FALLBACK_THREAD, makeThreadRouter, routeThread, THREAD_MODELS, type RouteRecord } from "./router.js";
+import { EFFORTS, pick, pickEnough, pickModel, planFrom, withStepStarted, withStepsDone, isPlanFinished, type Route } from "./core.js";
 
 const reply = (answers: JevReply["answers"]): JevReply => ({ answers,
   jev: { isAnswered: answers !== null, ms: 1, inputTokens: 0, keyMs: 0 } });
@@ -97,4 +97,40 @@ test("plan dependency ownership controls helper background work", () => {
   const started = withStepStarted(plan, 1);
   assert.equal(started[0]?.status, "started");
   assert.equal(isPlanFinished(withStepsDone(started, [1, 2, 3])), true);
+});
+
+test("model picks take the cheapest model that is enough, neither weaker nor stronger than needed", () => {
+  const choose = (probabilities: Record<string, number>) =>
+    pickModel({ choice: "", confidence: 0, probabilities }, THREAD_MODELS)?.choice;
+  assert.equal(choose({ "gpt-6-luna": 0.99, "claude-sonnet-5-5": 0.01 }), "gpt-6-luna");
+  assert.equal(
+    choose({ "gpt-6-luna": 0.58, "gpt-6.1-sol": 0.09, "claude-sonnet-5-5": 0.31, "claude-opus-5-5": 0.01, "claude-fable-5-1": 0.01 }),
+    "claude-sonnet-5-5",
+    "a close call for the cheapest model goes to the next tier",
+  );
+  assert.equal(
+    choose({ "gpt-6-luna": 0.7, "gpt-6.1-sol": 0.01, "claude-sonnet-5-5": 0.29 }),
+    "gpt-6-luna",
+    "a clear majority for the cheapest model keeps it",
+  );
+  for (const opus of [0.69, 0.71])
+    assert.equal(
+      choose({ "claude-opus-5-5": opus, "claude-fable-5-1": 1 - opus }),
+      "claude-opus-5-5",
+      "a strong model that is enough is not raised to the strongest when the vote moves slightly",
+    );
+  assert.equal(choose({ "claude-fable-5-1": 1 }), "claude-fable-5-1");
+  assert.equal(
+    pickModel({ choice: "claude-opus-5-5", confidence: 0.9 }, THREAD_MODELS)?.choice,
+    "claude-opus-5-5",
+    "a categorical answer above the floor is used as given",
+  );
+});
+
+test("effort and context take the least option that is enough", () => {
+  const effort = (probabilities: Record<string, number>) =>
+    pickEnough({ choice: "", confidence: 0, probabilities }, EFFORTS)?.choice;
+  assert.equal(effort({ low: 0.13, medium: 0.48, high: 0.39 }), "high", "a close call rises to the next level");
+  assert.equal(effort({ low: 0.17, medium: 0.81, high: 0.02 }), "medium");
+  assert.equal(effort({ low: 0.89, medium: 0.11 }), "low", "a clear vote for less effort keeps it");
 });
