@@ -1,9 +1,18 @@
-# Model Pilot 0.4.2 release notes and requirements
+# Model Pilot 0.4.3 release notes and requirements
 
 Model Pilot is an experimental BB plugin for AI model routing, coding agents, and usage reporting.
 The public source is [MahmoudElsayad/bb-model-pilot](https://github.com/MahmoudElsayad/bb-model-pilot).
 Original plugin code uses the MIT license with copyright 2026 Mahmoud Elsayad.
 Copied T3 Code portions retain the MIT notice in `notices/T3-CODE-LICENSE.txt`.
+
+## Changes in 0.4.3
+
+Model Pilot picks the cheapest model, effort, and context window that the classifier's vote makes at least 65% likely to be enough.
+Before, it picked the option where the vote reached half, which sent close calls to the cheapest model.
+Codex, Claude Code, OpenAI, and Anthropic classifiers now return percent votes like Jev, so the same rule applies to them.
+Native Claude Code classification now finds the Claude login on macOS.
+Before, it reported "Not logged in" and every classification used the fallback route.
+`bb auto route` now prints the classifier's vote for every question.
 
 ## Changes in 0.4.2
 
@@ -35,7 +44,7 @@ The secondary category is `token-usage-and-limits`.
 
 ## Compatibility limits
 
-Version 0.4.2 targets BB 0.46 on macOS, bridge protocol 2, and grammar version 3.
+Version 0.4.3 targets BB 0.46 on macOS, bridge protocol 2, and grammar version 3.
 The adapter uses internal BB bridge files rather than a public reusable provider factory.
 A BB update can require an adapter update.
 Other platforms and BB versions do not have verified support.
@@ -59,8 +68,12 @@ BB marketplace checkout is not part of this release.
 
 ## Classifier and usage limits
 
-Jev retains the original TypeSafe classification policy.
-Other classifiers return choices for the routing categories.
+Jev retains the original TypeSafe classification questions.
+Each classifier returns a percent vote over the choices for every routing question.
+Model Pilot picks the cheapest model, effort, and context window that the vote makes at least 65% likely to be enough.
+This avoids a model too weak for the task and a stronger model than the task needs.
+Jev's votes are calibrated probabilities.
+Other classifiers estimate their own percents, so the same rule can give different routes.
 Adapter compatibility does not establish equivalent decision quality.
 A failed classification can trigger the policy's Opus medium fallback.
 That fallback requires provider access and can cost more than the expected route.
