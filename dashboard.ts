@@ -174,6 +174,8 @@ export function buildDashboard(args: {
   plans: PlanHistory[];
   setup: z.infer<typeof setupSchema>;
   titles: Map<string, string>;
+  /** The thread that started each helper, so a thread's view includes its helpers. */
+  owners?: Map<string, string>;
   now?: number;
   warnings?: string[];
 }): DashboardData {
@@ -198,7 +200,9 @@ export function buildDashboard(args: {
     threads: DashboardData["threads"] = [];
   const sessions = args.sessions.filter(
     (session) =>
-      !args.input.threadId || session.threadId === args.input.threadId,
+      !args.input.threadId ||
+      session.threadId === args.input.threadId ||
+      args.owners?.get(session.threadId) === args.input.threadId,
   );
   const groups = [
     ...sessions.map((session) => ({ session, history: session.history })),

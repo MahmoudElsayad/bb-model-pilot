@@ -606,3 +606,103 @@ test("failed BB classifier connection preserves the saved selection", async () =
     await harness.dispose();
   }
 });
+
+test("a thread's usage includes the helpers it started", async () => {
+  // Usage that Model Pilot logged for a real thread and one of its Sonnet helpers.
+  const at = Date.now() - 60_000;
+  const usage = (model: string, nativeSessionId: string, read: number, write: number, input: number, output: number) => ({
+    at,
+    entry: {
+      type: "usage",
+      model,
+      nativeSessionId,
+      usage: {
+        kind: "usage",
+        total: {
+          totalTokens: read + write + input + output,
+          inputTokens: input,
+          cachedInputTokens: read + write,
+          cacheReadInputTokens: read,
+          cacheWriteInputTokens: write,
+          outputTokens: output,
+          reasoningOutputTokens: 0,
+        },
+      },
+    },
+  });
+  const histories: Record<string, unknown[]> = {
+    "thread-main": [usage("claude-opus-5-5", "native-main", 340_976, 45_494, 16, 5_216)],
+    "thread-helper": [usage("claude-sonnet-5-5", "native-helper", 46_577, 22_571, 4, 1_296)],
+    "thread-other-helper": [usage("claude-sonnet-5-5", "native-other", 1_000_000, 0, 0, 0)],
+  };
+  const thread = (id: string, owner: string | null, archived: boolean) => ({
+    ...makeThreadResponse({ id, providerId: "auto", environmentId: "env-test" }),
+    lifecycleOwnerThreadId: owner,
+    originPluginId: owner === null ? null : "auto-router",
+    visibility: owner === null ? "visible" : "hidden",
+    archivedAt: archived ? at : null,
+  });
+  const threads = [
+    thread("thread-main", null, false),
+    thread("thread-helper", "thread-main", true),
+    thread("thread-other-helper", "thread-other", true),
+  ];
+  const host = createFakePluginHost({
+    pluginId: "auto-router",
+    experimental_callHostRpc: async ({ method, input }) => {
+      const threadId = (input as { threadId?: string } | undefined)?.threadId ?? "";
+      if (method === "getSession")
+        return { route, delegation: null, revision: null, history: histories[threadId] ?? [] };
+      if (method === "listSessions")
+        return {
+          limited: false,
+          sessions: Object.entries(histories).map(([id, history]) => ({
+            autoId: `auto-${id}`,
+            threadId: id,
+            helper: id !== "thread-main",
+            updatedAt: at,
+            route: null,
+            history,
+            truncated: false,
+          })),
+        };
+      return { configured: false };
+    },
+    sdk: {
+      system: { config: async () => ({ primaryHostId: "host-test" }) },
+      plugins: { getSettings: async () => ({ ok: true, schema: {}, values: {} }) },
+      providers: { list: async () => [], models: async () => ({ models: [] }) },
+      environments: { get: async () => ({ id: "env-test", hostId: "host-test" }) },
+      threads: {
+        get: async ({ threadId }: { threadId: string }) => threads.find((t) => t.id === threadId)!,
+        list: async (args?: { archived?: boolean; includeHidden?: boolean }) =>
+          threads.filter(
+            (t) => (args?.archived === true) === (t.archivedAt !== null) && (args?.includeHidden === true || t.visibility !== "hidden"),
+          ),
+        defaultExecutionOptions: async () => null,
+      },
+    },
+  });
+  await plugin(host.bb, { ask: noAnswer });
+  const { harness } = host;
+  try {
+    const opus = 16 * 4e-6 + 340_976 * 2e-7 + 45_494 * 8e-6 + 5_216 * 2e-5;
+    const sonnet = 4 * 2e-6 + 46_577 * 2e-7 + 22_571 * 4e-6 + 1_296 * 1e-5;
+
+    const status = await harness.runCli(["status", "--thread", "thread-main"]);
+    assert.equal(status.exitCode, 0, status.stderr);
+    const summary = JSON.parse(status.stdout).usage;
+    assert.deepEqual(Object.keys(summary.byModel).sort(), ["claude-opus-5-5", "claude-sonnet-5-5"]);
+    assert.equal(summary.byModel["claude-sonnet-5-5"].outputTokens, 1_296);
+    assert.ok(Math.abs(summary.totalUsd - (opus + sonnet)) < 1e-9, `${summary.totalUsd}`);
+
+    const dashboard = (await harness.callRpc("dashboard", {
+      days: 7,
+      baselineModel: "claude-opus-5-5",
+      threadId: "thread-main",
+    })) as { summary: { totalUsd: number } };
+    assert.ok(Math.abs(dashboard.summary.totalUsd - (opus + sonnet)) < 1e-9, `${dashboard.summary.totalUsd}`);
+  } finally {
+    await harness.dispose();
+  }
+});

@@ -443,6 +443,7 @@ export default async function plugin(
         } catch {}
       }
       const titles = new Map<string, string>();
+      const owners = new Map<string, string>();
       await Promise.all(
         [...new Set(retained.sessions.map((s) => s.threadId))].map(
           async (threadId) => {
@@ -455,6 +456,8 @@ export default async function plugin(
               ) {
                 for (const saved of retained.sessions)
                   if (saved.threadId === threadId) saved.helper = true;
+                if (t.lifecycleOwnerThreadId)
+                  owners.set(threadId, t.lifecycleOwnerThreadId);
               }
             } catch {}
           },
@@ -467,6 +470,7 @@ export default async function plugin(
         plans,
         setup,
         titles,
+        owners,
         warnings: retained.limited
           ? [
               "The host report is capped at 500 sessions and 5,000 records. Some older records are missing.",
@@ -728,6 +732,41 @@ export default async function plugin(
       history: state.history,
       execution,
     };
+  }
+  /** The usage logs of the helpers a thread started: hidden threads in its environment that it owns. */
+  async function helperHistories(
+    threadId: string,
+    environment: { id: string; hostId: string },
+    signal?: AbortSignal,
+  ) {
+    const listed = await Promise.all(
+      [false, true].map((archived) =>
+        bb.sdk.threads.list({
+          environmentId: environment.id,
+          includeHidden: true,
+          archived,
+          limit: 500,
+          signal,
+        }),
+      ),
+    );
+    const helpers = listed
+      .flat()
+      .filter(
+        (thread) =>
+          thread.lifecycleOwnerThreadId === threadId &&
+          thread.originPluginId === bb.pluginId,
+      );
+    const states = await Promise.all(
+      helpers.map((thread) =>
+        host.call(
+          "getSession",
+          { threadId: thread.id },
+          { hostId: environment.hostId, signal },
+        ),
+      ),
+    );
+    return states.flatMap((state) => state.history);
   }
   bb.agents.registerTool({
     name: "auto_plan",
@@ -1076,6 +1115,13 @@ export default async function plugin(
                   return null;
                 })
               : null;
+            const helpers = state
+              ? await helperHistories(
+                  state.thread.id,
+                  state.environment,
+                  ctx.signal,
+                )
+              : [];
             const planRouting = threadId
               ? await bb.storage.kv.get(`plan-routing:${threadId}`)
               : null;
@@ -1084,6 +1130,7 @@ export default async function plugin(
               .safeParse(planRouting);
             const history = [
               ...(state?.history ?? []),
+              ...helpers,
               ...(planRecord.success
                 ? [
                     {
