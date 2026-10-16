@@ -1,9 +1,19 @@
-# Model Pilot 0.4.3 release notes and requirements
+# Model Pilot 0.4.4 release notes and requirements
 
 Model Pilot is an experimental BB plugin for AI model routing, coding agents, and usage reporting.
 The public source is [MahmoudElsayad/bb-model-pilot](https://github.com/MahmoudElsayad/bb-model-pilot).
 Original plugin code uses the MIT license with copyright 2026 Mahmoud Elsayad.
 Copied T3 Code portions retain the MIT notice in `notices/T3-CODE-LICENSE.txt`.
+
+## Changes in 0.4.4
+
+Subscription usage is now an input to routing.
+Model Pilot reads Codex limits from the Codex app server and Claude Code limits from the usage reports that BB sends during each turn.
+If an account is blocked, the classifier is not offered its models, and the route row shows a "Usage limit" badge.
+The model pick now considers only the models that the classifier was offered.
+Before, a GPT model could win a helper pick as the cheapest model in its tier, even when the Codex account was blocked.
+`bb auto status` and the dashboard's thread view now include the usage of the helpers that a thread started.
+Before, a thread that used helpers reported only its own usage.
 
 ## Changes in 0.4.3
 
@@ -44,7 +54,7 @@ The secondary category is `token-usage-and-limits`.
 
 ## Compatibility limits
 
-Version 0.4.3 targets BB 0.46 on macOS, bridge protocol 2, and grammar version 3.
+Version 0.4.4 targets BB 0.46 on macOS, bridge protocol 2, and grammar version 3.
 The adapter uses internal BB bridge files rather than a public reusable provider factory.
 A BB update can require an adapter update.
 Other platforms and BB versions do not have verified support.
