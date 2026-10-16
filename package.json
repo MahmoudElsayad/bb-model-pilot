@@ -26,7 +26,7 @@
   },
   "scripts": {
     "build": "bb plugin build",
-    "test": "tsx --test host.test.ts server.test.ts routing/router.test.ts routing/classifier.test.ts routing/native-classifier.test.ts report.test.ts dashboard.test.ts dashboard-view.test.tsx",
+    "test": "tsx --test host.test.ts server.test.ts routing/router.test.ts routing/usage.test.ts routing/classifier.test.ts routing/native-classifier.test.ts report.test.ts dashboard.test.ts dashboard-view.test.tsx",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

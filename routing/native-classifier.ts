@@ -15,7 +15,8 @@ import type { JevAsk, JevReply } from "./jev.js";
 import { z } from "zod";
 import { promisify } from "node:util";
 const runFile = promisify(execFile);
-function classifierEnvironment() {
+/** The environment a local Codex or Claude Code process gets: its login, paths and proxy, nothing else. */
+export function classifierEnvironment() {
   const env: NodeJS.ProcessEnv = {};
   for (const key of [
     "HOME",

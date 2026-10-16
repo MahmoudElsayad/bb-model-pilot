@@ -165,6 +165,15 @@ This avoids a model too weak for the task and a stronger model than the task nee
 Jev's votes are calibrated probabilities.
 Codex, Claude Code, OpenAI, and Anthropic classifiers estimate their own percents.
 
+Subscription usage is an input to every routing question.
+Model Pilot asks Codex for the limits of your ChatGPT account before it routes, at most once every two minutes.
+Claude Code reports its usage during each turn, and Model Pilot keeps the latest report.
+The classifier reads which accounts are available, near a limit, or blocked, and when each limit resets.
+If an account is blocked, its models are not offered, because their requests would fail.
+For example, if your Codex spend cap is used up, a task that would go to GPT-6 Luna goes to the cheapest Claude model that is enough.
+If every account is blocked, Model Pilot offers all models and routes as usual.
+A Claude Code limit is known only after a turn reports it, so the first request after a new limit can still fail.
+
 A helper is a separate agent with a focused task.
 It starts with its own context and receives a task brief rather than the complete parent conversation.
 The parent must include the facts, paths, and expected result that the helper needs.
@@ -187,6 +196,7 @@ The row also shows the effort and the context window.
 If the classifier chose a helper or a plan, the row shows it too.
 Expand the row to read why the classifier chose that route.
 A "Fallback route" badge means that classification was unavailable.
+A "Usage limit" badge means that a blocked account left models out of the choice, and its hint says until when.
 
 A plan row shows the number of steps and the helper models.
 Expand it to see who does each step.

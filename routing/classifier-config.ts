@@ -133,5 +133,6 @@ export const classifierResultSchema = z.object({
     inputTokens: z.number(),
     keyMs: z.number(),
     classifier: classifierMetadataSchema.optional(),
+    limits: z.string().optional(),
   }),
 });

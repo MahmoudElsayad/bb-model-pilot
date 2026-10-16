@@ -17,6 +17,8 @@ export const routeRowSchema = z.object({
   main: routeSchema,
   mode: z.enum(["direct", "helper", "plan"]),
   helper: routeSchema.nullable(),
+  /** The models subscription usage left out, and why. */
+  limits: z.string().nullable().default(null),
 });
 export type RouteRow = z.infer<typeof routeRowSchema>;
 
@@ -26,11 +28,16 @@ const WINDOW_NAMES = { "200k": "200k", "1m": "1M" } as const;
 /** The Warm Charcoal theme's orange `--primary`, darkened in light mode for contrast. */
 export const ACCENT = { light: "#c8641f", dark: "#ec8743" };
 
-export function routeRow(route: Route, delegation: Delegation | null, turn: RouteRow["turn"]): RouteRow {
-  if (delegation?.plan === true) return { turn, main: route, mode: "plan", helper: null };
+export function routeRow(
+  route: Route,
+  delegation: Delegation | null,
+  turn: RouteRow["turn"],
+  limits: string | null = null,
+): RouteRow {
+  if (delegation?.plan === true) return { turn, main: route, mode: "plan", helper: null, limits };
   if (delegation?.delegate === true && delegation.helper !== null)
-    return { turn, main: route, mode: "helper", helper: delegation.helper };
-  return { turn, main: route, mode: "direct", helper: null };
+    return { turn, main: route, mode: "helper", helper: delegation.helper, limits };
+  return { turn, main: route, mode: "direct", helper: null, limits };
 }
 
 /** "high effort · 1M context": Codex has no window setting, so its routes show none. */
@@ -83,7 +90,7 @@ export function routeRowPresentation(row: RouteRow): DeltaPresentation {
     icon: { glyph: "Workflow" },
     tint: ACCENT,
     title: [setup(row.main), mode].filter((part) => part !== null).join(" · "),
-    detail: clamp(`${opening} ${work}${confidence}`, DETAIL_MAX),
+    detail: clamp(`${opening} ${work}${row.limits === null ? "" : ` ${row.limits}`}${confidence}`, DETAIL_MAX),
     ...(row.main.source === "fallback"
       ? {
           badge: {
@@ -93,7 +100,16 @@ export function routeRowPresentation(row: RouteRow): DeltaPresentation {
             tone: "neutral" as const,
           },
         }
-      : {}),
+      : row.limits !== null
+        ? {
+            badge: {
+              glyph: "Gauge",
+              label: "Usage limit",
+              hint: clamp(row.limits, DETAIL_MAX),
+              tone: "neutral" as const,
+            },
+          }
+        : {}),
   };
 }
 

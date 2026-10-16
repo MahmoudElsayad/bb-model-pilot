@@ -12,6 +12,8 @@ export type JevCall = {
   inputTokens: number;
   keyMs: number;
   classifier?: ClassifierMetadata;
+  /** Which models subscription usage left out of the questions, and why. */
+  limits?: string;
 };
 export const NO_JEV_CALL: JevCall = {
   isAnswered: true,

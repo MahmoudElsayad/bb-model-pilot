@@ -68,9 +68,11 @@ export type RouteReply = {
   decision: "first" | "unmanaged" | "changed" | "routed";
   delegation: Delegation | null;
   note: string | null;
+  /** The models subscription usage left out of this decision, and why. */
+  limits: string | null;
 };
 export type RouteRecord = {
-  type: "route"; scope: "main"; isFirstPrompt: boolean; description: "Auto provider";
+  type: "route"; scope: "main" | "helper"; isFirstPrompt: boolean; description: "Auto provider";
   route: Route; jev: JevCall; delegation: Delegation;
 };
 export type ThreadRouterDeps = {
@@ -88,11 +90,11 @@ export function makeThreadRouter(deps: ThreadRouterDeps) {
       const delegation = delegationFrom(reply.answers, route);
       await deps.record(request.threadId, { type: "route", scope: "main", isFirstPrompt: true,
         description: "Auto provider", route, jev: reply.jev, delegation });
-      return { route, decision: "first", delegation, note: routingNote(delegation) };
+      return { route, decision: "first", delegation, note: routingNote(delegation), limits: reply.jev.limits ?? null };
     }
     const last = await deps.lastRoute(request.threadId);
     if (last === undefined || last.model !== request.currentModel) {
-      return { route: null, decision: last === undefined ? "unmanaged" : "changed", delegation: null, note: null };
+      return { route: null, decision: last === undefined ? "unmanaged" : "changed", delegation: null, note: null, limits: null };
     }
     const reply = await deps.ask(buildState(request.prompt, {
       "Conversation turn": "a later message", "main agent": mainAgentFact(last),
@@ -100,6 +102,6 @@ export function makeThreadRouter(deps: ThreadRouterDeps) {
     const delegation = delegationFrom(reply.answers, last);
     await deps.record(request.threadId, { type: "route", scope: "main", isFirstPrompt: false,
       description: "Auto provider", route: last, jev: reply.jev, delegation });
-    return { route: last, decision: "routed", delegation, note: routingNote(delegation) };
+    return { route: last, decision: "routed", delegation, note: routingNote(delegation), limits: reply.jev.limits ?? null };
   };
 }

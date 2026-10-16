@@ -490,6 +490,12 @@ test("helper models bypass Jev and preserve the selected Claude context window",
   });
   const id = await h.start("auto-helper:claude-opus-5-5:high:200k");
   assert.equal((await h.response(h.turn(id))).error, undefined);
+  const routes = (await readFile(join(h.directory, "sessions", `${id}.ndjson`), "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line).entry)
+    .filter((entry) => entry.type === "route");
+  assert.deepEqual(routes.map((entry) => entry.scope), ["helper"]);
   const construction = z
     .object({
       options: z.object({
@@ -782,5 +788,68 @@ test("plan and helper rows name each step's model from the routed plan", async (
     toolRow(h.messages, "auto_delegate")[1]?.presentation?.label.completed,
     "Ran",
     "a new message drops the earlier message's plan",
+  );
+});
+
+test("a route that usage limited says which models were left out", async () => {
+  const limits =
+    "GPT models were left out because the spend cap is used up, resets on 2026-11-01.";
+  const h = await harness(async () => ({ ...jev, jev: { ...jev.jev, limits } }));
+  await h.response(h.turn(await h.start()));
+  const [routed] = routeRows(h.messages);
+  assert.equal(routed?.presentation.badge?.label, "Usage limit");
+  assert.equal(routed?.presentation.badge?.hint, limits);
+  assert.ok(routed?.presentation.detail?.includes(limits));
+});
+
+test("the bridge keeps the latest usage report a native turn sends", async () => {
+  const h = await harness();
+  await h.response(h.turn(await h.start()));
+  const resetsAtMs = Date.now() + 3_600_000;
+  h.launches[0]!.args.onMessage({
+    jsonrpc: "2.0",
+    method: "thread/delta",
+    params: {
+      threadId: "bb-thread",
+      deltas: [
+        {
+          kind: "provider.rateLimits",
+          rateLimits: {
+            providerId: "claude-code",
+            status: "blocked",
+            kind: "subscription-window",
+            windows: [
+              {
+                providerKey: "five_hour",
+                label: "Five-hour limit",
+                status: "blocked",
+                resetsAtMs,
+              },
+            ],
+            reachedReason: null,
+            overageStatus: "rejected",
+            overageReason: null,
+          },
+        },
+      ],
+    },
+  });
+  const file = join(h.directory, "usage", "claude.json");
+  let saved: unknown = null;
+  for (let count = 0; count < 100 && saved === null; count++) {
+    saved = await readFile(file, "utf8")
+      .then((text) => JSON.parse(text))
+      .catch(() => null);
+    if (saved === null) await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.deepEqual(
+    { ...(saved as object), checkedAtMs: 0 },
+    {
+      provider: "claude",
+      status: "blocked",
+      reason: "the five-hour limit is reached",
+      resetsAtMs,
+      checkedAtMs: 0,
+    },
   );
 });

@@ -1,4 +1,15 @@
-import { makeNativeClassifierAsk } from "./routing/native-classifier.js";
+import {
+  classifierEnvironment,
+  makeNativeClassifierAsk,
+} from "./routing/native-classifier.js";
+import { withUsage, type ProviderUsage } from "./routing/usage.js";
+import {
+  bbRateLimitsSchema,
+  bbUsage,
+  makeUsageReader,
+  readCodexLimits,
+  recordUsage,
+} from "./routing/usage-sources.js";
 import {
   classifierConfigSchema,
   defaultClassifierConfig,
@@ -215,7 +226,7 @@ export function makeAutoBridge(
   const io = createBridgeIo<RpcMessage>({ write: deps.write });
   const ask: JevAsk =
     deps.ask ??
-    ((state, questions) => askWithStoredKey(dataDir(), state, questions));
+    ((state, questions) => askWithUsage(dataDir(), state, questions));
   const launch = deps.launch ?? launchBridge;
   let context: ProviderBridgeContext | null = null;
   let closed = false;
@@ -375,6 +386,40 @@ export function makeAutoBridge(
     }
     return delta;
   }
+  /** Keeps the latest usage report, so the next routing decision can read it. */
+  function noteUsage(session: Session, delta: ThreadDelta) {
+    const now = Date.now();
+    const provider =
+      modelInfo(session.saved.route?.model ?? "")?.provider ?? null;
+    const report =
+      delta.kind === "provider.rateLimits"
+        ? bbRateLimitsSchema.safeParse(delta.rateLimits)
+        : null;
+    const usage =
+      report !== null
+        ? report.success
+          ? bbUsage(report.data, now)
+          : null
+        : delta.kind === "provider.error" &&
+            (delta.category ?? delta.errorInfo?.category) === "rate-limit" &&
+            delta.willRetry !== true &&
+            provider !== null
+          ? {
+              provider,
+              status: "blocked" as const,
+              reason: null,
+              resetsAtMs: null,
+              checkedAtMs: now,
+            }
+          : null;
+    if (usage === null) return;
+    void recordUsage(dirname(credentialFile(dataDir())), usage).catch(
+      (error: unknown) =>
+        process.stderr.write(
+          `Auto usage record failed: ${error instanceof Error ? error.message : String(error)}\n`,
+        ),
+    );
+  }
   function nativeMessage(session: Session, message: RpcMessage) {
     if (session.closing || closed) return;
     if (message.method === "thread/identity") {
@@ -427,6 +472,7 @@ export function makeAutoBridge(
           }
         }
         if (delta.kind === "turn.boundary") session.activeTurn = null;
+        noteUsage(session, delta);
         if (delta.kind === "usage")
           void appendLedger(session, {
             type: "usage",
@@ -607,6 +653,7 @@ export function makeAutoBridge(
           decision: "routed",
           delegation: session.saved.delegation,
           note: null,
+          limits: null,
         }
       : forced === null
         ? await route(
@@ -619,11 +666,17 @@ export function makeAutoBridge(
                   currentModel: previous.model,
                 },
           )
-        : { route: forced, decision: "routed", delegation: null, note: null };
+        : {
+            route: forced,
+            decision: "routed",
+            delegation: null,
+            note: null,
+            limits: null,
+          };
     if (forced !== null && !continuation)
       await record(turn.threadId, {
         type: "route",
-        scope: "main",
+        scope: "helper",
         isFirstPrompt: previous === null,
         description: "Auto provider",
         route: forced,
@@ -639,6 +692,7 @@ export function makeAutoBridge(
         selected,
         decision.delegation,
         previous === null ? "first" : "later",
+        decision.limits,
       );
     await ready(session, turn.options, selected);
     const child = session.native;
@@ -1011,6 +1065,26 @@ async function readClassifierKey(
       return process.env.ANTHROPIC_API_KEY?.trim() || null;
   }
 }
+const usageReaders = new Map<string, () => Promise<ProviderUsage[]>>();
+/** The classifier with each account's subscription usage as an input. */
+function askWithUsage(
+  dataDir: string,
+  state: string,
+  questions: Parameters<JevAsk>[1],
+) {
+  const directory = dirname(credentialFile(dataDir));
+  let readUsage = usageReaders.get(directory);
+  if (readUsage === undefined) {
+    readUsage = makeUsageReader(directory, {
+      readCodex: () => readCodexLimits(classifierEnvironment()),
+    });
+    usageReaders.set(directory, readUsage);
+  }
+  return withUsage(
+    (state, questions) => askWithStoredKey(dataDir, state, questions),
+    readUsage,
+  )(state, questions);
+}
 async function askWithStoredKey(
   dataDir: string,
   state: string,
@@ -1297,7 +1371,7 @@ export default experimental_defineHostEntry({
       };
     },
     async evaluate({ state, questions }, context) {
-      return askWithStoredKey(
+      return askWithUsage(
         context.experimental_paths.dataDir,
         state,
         questions,
