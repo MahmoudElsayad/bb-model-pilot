@@ -84,9 +84,9 @@ export const MAIN_MODELS = {
   "claude-sonnet-5-5":
     "Routine work: questions, explanations, small or mechanical edits, a clear bug with a known cause, running commands, writing docs.",
   "claude-opus-5-5":
-    "Substantial engineering: a feature across several files, a refactor, debugging with an unclear cause, a code review, a plan for a non-trivial change.",
+    "Substantial engineering: a feature across several files, a refactor, debugging with an unclear cause, a code review, a plan for a non-trivial change, a design question or trade-off answered in a few sentences.",
   "claude-fable-5-1":
-    "The hardest work: system architecture and design trade-offs, subtle concurrency, security or data-loss problems, novel algorithms, a long autonomous task with many steps.",
+    "The hardest work: a long autonomous task with many steps, a correctness-critical change, or a subtle concurrency, security or data-loss problem that needs deep investigation.",
 } as const satisfies Partial<Record<ModelId, string>>;
 
 /**
