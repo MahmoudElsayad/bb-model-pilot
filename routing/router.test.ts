@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { makeJevAsk, KEY_RETRY_MS, type JevReply } from "./jev.js";
 import { FALLBACK_THREAD, makeThreadRouter, routeThread, THREAD_MODELS, type RouteRecord } from "./router.js";
-import { EFFORTS, pick, pickEnough, pickModel, planFrom, withStepStarted, withStepsDone, isPlanFinished, type Route } from "./core.js";
+import { delegationFrom, EFFORTS, helperModelsFor, pick, pickEnough, pickModel, planFrom, withStepStarted, withStepsDone, isPlanFinished, type Route } from "./core.js";
 
 const reply = (answers: JevReply["answers"]): JevReply => ({ answers,
   jev: { isAnswered: answers !== null, ms: 1, inputTokens: 0, keyMs: 0 } });
@@ -86,6 +86,35 @@ test("later turns retain the main route, and manual changes stop routing", async
   const changed = await router({ threadId: "thread", prompt: "manual", turn: "later", currentModel: "claude-opus-5-5" });
   assert.equal(changed.decision, "changed");
   assert.equal(states.length, 2);
+});
+
+test("a plan or a helper needs the same vote share as a model pick, else the main agent works", () => {
+  const shape = (probabilities: Record<string, number>) => ({ shape: { choice: "", confidence: 0, probabilities } });
+  assert.deepEqual(delegationFrom(shape({ main: 0.49, plan: 0.51 }), FALLBACK_THREAD),
+    { delegate: false, share: 0.51, helper: null });
+  assert.deepEqual(delegationFrom(shape({ main: 0.4, helper: 0.6 }), FALLBACK_THREAD),
+    { delegate: false, share: 0.6, helper: null });
+  assert.equal(delegationFrom(shape({ main: 0.24, plan: 0.76 }), FALLBACK_THREAD).plan, true);
+  assert.equal(delegationFrom(shape({ main: 0.3, helper: 0.7 }), FALLBACK_THREAD).delegate, true);
+});
+
+test("in auto permission mode no helper runs on Haiku, which asks for approvals nobody sees", async () => {
+  assert.ok("claude-haiku-4-5-20251001" in helperModelsFor("accept-edits"));
+  assert.ok(!("claude-haiku-4-5-20251001" in helperModelsFor("auto")));
+  const asked: string[][] = [];
+  const router = makeThreadRouter({
+    ask: async (_, questions) => {
+      asked.push(Object.keys(questions.helperModel?.criteria ?? {}));
+      return reply({ shape: { choice: "helper", confidence: 1 } });
+    },
+    record: async () => {}, lastRoute: async () => undefined,
+  });
+  const routed = await router({ threadId: "thread", prompt: "List the teams in Linear.", turn: "first", permissionMode: "auto" });
+  assert.ok(!asked[0]!.includes("claude-haiku-4-5-20251001"));
+  assert.equal(routed.delegation?.helper?.model, "claude-sonnet-5-5", "with no model answer the helper gets the cheapest Claude model offered");
+  const plan = planFrom([{ title: "look up" }, { title: "answer", after: [1] }],
+    { owner_1: { choice: "helper", confidence: 1 } }, FALLBACK_THREAD, helperModelsFor("auto"));
+  assert.equal(plan[0]?.helper?.model, "claude-sonnet-5-5");
 });
 
 test("plan dependency ownership controls helper background work", () => {

@@ -106,6 +106,19 @@ export const HELPER_MODELS = {
 
 export const isGptModel = (model: string): boolean => model.startsWith("gpt-");
 
+export type HelperModels = Partial<Record<ModelId, string>>;
+
+/**
+ * The helper models a thread's permission mode can run. Claude Code's auto mode does not cover
+ * Haiku 4.5: there, every tool call outside the workspace, such as an MCP tool or the network,
+ * asks for an approval. A helper's thread is hidden, so nobody sees that prompt.
+ */
+export function helperModelsFor(permissionMode: string | undefined): HelperModels {
+  if (permissionMode !== "auto") return HELPER_MODELS;
+  const { "claude-haiku-4-5-20251001": _haiku, ...rest } = HELPER_MODELS;
+  return rest;
+}
+
 /** The shape of a message's work. Unordered: the pick is the largest share. */
 export const SHAPES = {
   main: "The main agent does all of it itself: a question, an explanation, a small change, or work that needs the conversation so far or back-and-forth with the person.",
@@ -149,7 +162,7 @@ export function buildState(task: string, facts: Record<string, string | number>)
 }
 
 /** The shape of a message's work, and the helper's model, effort and context if one takes part of it. */
-export function delegationQuestions(): Record<string, Question> {
+export function delegationQuestions(helperModels: HelperModels = HELPER_MODELS): Record<string, Question> {
   return {
     shape: {
       type: "choice",
@@ -160,7 +173,7 @@ export function delegationQuestions(): Record<string, Question> {
       type: "choice",
       instructions:
         "If part of it is handed to a helper, which model should the helper use? The options run from cheapest to most expensive. Pick the least capable model that will do that part well.",
-      criteria: HELPER_MODELS,
+      criteria: helperModels,
     },
     helperEffort: {
       type: "choice",
@@ -329,12 +342,13 @@ const HELPER_BASE: Route = {
   source: "fallback",
 };
 
-/** A helper's route from the named answers; Haiku, low effort, 200k where Jev gave none. */
+/** A helper's route from the named answers; the cheapest Claude model offered, low effort, 200k where Jev gave none. */
 function helperOf(
   answers: Record<string, Choice>,
   model: string,
   effort: string,
   window: string,
+  helperModels: HelperModels,
 ): Route {
   return routeFrom(
     {
@@ -342,8 +356,8 @@ function helperOf(
       ...(answers[effort] ? { effort: answers[effort] } : {}),
       ...(answers[window] ? { window: answers[window] } : {}),
     },
-    HELPER_BASE,
-    HELPER_MODELS,
+    { ...HELPER_BASE, model: Object.keys(helperModels).find((id) => !isGptModel(id)) ?? HELPER_BASE.model },
+    helperModels,
   );
 }
 
@@ -380,9 +394,21 @@ export function mainAgentFact(main: Route): string {
   );
 }
 
-export function delegationFrom(answers: Record<string, Choice> | null, main: Route): Delegation {
+/**
+ * A plan or a helper starts fresh contexts that cost more than the main agent doing the work, so
+ * either needs ENOUGH_SHARE of the vote. In the live test, plans picked with 51% and 60% of the
+ * vote doubled the cost of a small task; below the bar the main agent does the work.
+ */
+export function delegationFrom(
+  answers: Record<string, Choice> | null,
+  main: Route,
+  helperModels: HelperModels = HELPER_MODELS,
+): Delegation {
   const shape = pickMost(answers?.shape, SHAPES);
   if (answers === null || shape === undefined) return NO_DELEGATION;
+  if (shape.choice !== "main" && shape.probability < ENOUGH_SHARE - 1e-9) {
+    return { delegate: false, share: shape.probability, helper: null };
+  }
   if (shape.choice === "plan") {
     return { delegate: false, share: shape.probability, helper: null, plan: true };
   }
@@ -390,7 +416,10 @@ export function delegationFrom(answers: Record<string, Choice> | null, main: Rou
   return {
     delegate: true,
     share: shape.probability,
-    helper: pricedHelper(helperOf(answers, "helperModel", "helperEffort", "helperContext"), main),
+    helper: pricedHelper(
+      helperOf(answers, "helperModel", "helperEffort", "helperContext", helperModels),
+      main,
+    ),
   };
 }
 
@@ -406,7 +435,10 @@ export function planState(steps: readonly PlanStepInput[], main: Route): string 
 }
 
 /** One Jev call for the whole plan: for each step, who does it, and the helper's model, effort and context. */
-export function planQuestions(steps: readonly PlanStepInput[]): Record<string, Question> {
+export function planQuestions(
+  steps: readonly PlanStepInput[],
+  helperModels: HelperModels = HELPER_MODELS,
+): Record<string, Question> {
   const questions: Record<string, Question> = {};
   steps.forEach((step, i) => {
     const n = i + 1;
@@ -418,7 +450,7 @@ export function planQuestions(steps: readonly PlanStepInput[]): Record<string, Q
     questions[`model_${n}`] = {
       type: "choice",
       instructions: `If step ${n} goes to a helper, which model? The options run from cheapest to most expensive. Pick the least capable model that will do it well.`,
-      criteria: HELPER_MODELS,
+      criteria: helperModels,
     };
     questions[`effort_${n}`] = {
       type: "choice",
@@ -462,6 +494,7 @@ export function planFrom(
   steps: readonly PlanStepInput[],
   answers: Record<string, Choice> | null,
   main: Route,
+  helperModels: HelperModels = HELPER_MODELS,
 ): PlanStep[] {
   const owned = steps.map((step, i): PlanStep => {
     const n = i + 1;
@@ -476,7 +509,10 @@ export function planFrom(
       owner,
       helper:
         owner === "helper" && answers !== null
-          ? pricedHelper(helperOf(answers, `model_${n}`, `effort_${n}`, `context_${n}`), main)
+          ? pricedHelper(
+              helperOf(answers, `model_${n}`, `effort_${n}`, `context_${n}`, helperModels),
+              main,
+            )
           : null,
       background: false,
       status: "pending",

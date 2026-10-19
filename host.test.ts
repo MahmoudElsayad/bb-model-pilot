@@ -672,7 +672,7 @@ test("a helper route names the helper, and a fallback route carries a badge", as
       effort: { choice: "high", confidence: 1 },
       window: { choice: "1m", confidence: 1 },
       shape: { choice: "helper", confidence: 1 },
-      helperModel: { choice: "claude-haiku-4-5-20251001", confidence: 1 },
+      helperModel: { choice: "claude-sonnet-5-5", confidence: 1 },
       helperEffort: { choice: "low", confidence: 1 },
       helperContext: { choice: "200k", confidence: 1 },
     },
@@ -684,7 +684,7 @@ test("a helper route names the helper, and a fallback route carries a badge", as
   assert.equal(routed?.presentation.label.completed, "Routed to Opus 5.5");
   assert.equal(
     routed?.presentation.title,
-    "high effort · 1M context · helper Haiku 4.5 low",
+    "high effort · 1M context · helper Sonnet 5.5 low",
   );
   assert.equal(routed?.presentation.badge, undefined);
 

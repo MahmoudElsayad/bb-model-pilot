@@ -31,6 +31,7 @@ const noAnswer: JevAsk = async () => ({
 async function setup(
   options: {
     waitFails?: boolean;
+    asksApproval?: boolean;
     outputFails?: boolean;
     archiveFails?: boolean;
     delegate?: boolean;
@@ -127,9 +128,26 @@ async function setup(
             providerId: "auto",
             environmentId: "env-test",
           }),
-        wait: async () => {
+        wait: async ({ signal }: { signal?: AbortSignal }) => {
           if (options.waitFails) throw new Error("wait failed");
+          if (options.asksApproval)
+            await new Promise((_, reject) =>
+              signal?.addEventListener("abort", () => reject(signal.reason), { once: true }),
+            );
           return {};
+        },
+        interactions: {
+          list: async () =>
+            options.asksApproval
+              ? [
+                  {
+                    payload: {
+                      kind: "approval",
+                      subject: { kind: "permission_grant", toolName: "mcp__claude_ai_Linear__list_teams" },
+                    },
+                  },
+                ]
+              : [],
         },
         output: async () => {
           if (options.outputFails) throw new Error("output failed");
@@ -145,7 +163,7 @@ async function setup(
   });
   await plugin(
     host.bb,
-    options.hostRouting ? {} : { ask: options.ask ?? noAnswer },
+    options.hostRouting ? { helperPollMs: 1 } : { ask: options.ask ?? noAnswer, helperPollMs: 1 },
   );
   return {
     ...host,
@@ -282,6 +300,20 @@ for (const failure of ["waitFails", "outputFails", "archiveFails"] as const) {
     }
   });
 }
+
+test("a helper that asks for an approval is stopped at once, and the main agent is told what it asked for", async () => {
+  const { harness } = await setup({ asksApproval: true });
+  try {
+    await assert.rejects(
+      harness.callAgentTool("auto_delegate", { task: "List the teams in Linear." }),
+      /approval to use mcp__claude_ai_Linear__list_teams.*Do this work yourself/,
+    );
+    assert.equal(harness.sdk.callsTo("threads.archive").length, 1);
+    assert.equal(harness.sdk.callsTo("threads.stop").length, 1);
+  } finally {
+    await harness.dispose();
+  }
+});
 
 test("unapproved route hints and already aborted calls never spawn a helper", async () => {
   const { harness } = await setup();

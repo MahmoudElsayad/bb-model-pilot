@@ -658,12 +658,18 @@ export function makeAutoBridge(
       : forced === null
         ? await route(
             previous === null
-              ? { threadId: turn.threadId, prompt, turn: "first" }
+              ? {
+                  threadId: turn.threadId,
+                  prompt,
+                  turn: "first",
+                  permissionMode: turn.options.permissionMode,
+                }
               : {
                   threadId: turn.threadId,
                   prompt,
                   turn: "later",
                   currentModel: previous.model,
+                  permissionMode: turn.options.permissionMode,
                 },
           )
         : {

@@ -1,17 +1,17 @@
 {
   "source": "apps/server/src/routing",
   "sourceSha256": {
-    "core.ts": "ae1237283332bb4ce39ab737065adc41a79a0b16a3314b3e36181ac04fed566c",
+    "core.ts": "13ab1ccabc2c66fcf64f502d908adbdb840875fb0de5a344db9854c5311607ee",
     "models.ts": "fe1a7689674584d3fe25b25c3cf222b416212edb9dec5c44591566fd25cdc9ed",
     "jev.ts": "40055b8df5ef0f55cae8baa84a8637f75b6eac39dd51a6fd2a28e7d9ec548bcd",
     "router.ts": "4a3a7487fa1b96648713141dd942d390118dc5089718a1e0ae004d65ff854cb3",
     "plans.ts": "28d554e595dc53a8d12ca9650f1e4ed5a3478802a6c5c0c1a2c5791918710f97"
   },
   "changes": {
-    "core.ts": "The ./models.ts import becomes ./models.js. Model, effort and context picks take the cheapest option whose vote share up to it reaches 0.65, instead of the weighted median. A model pick considers only the models that the vote names, so a model left out of the question is never picked. Fable is described as long autonomous work and correctness-critical problems, and a design question answered in a few sentences goes to Opus. The hash records this local file.",
+    "core.ts": "The ./models.ts import becomes ./models.js. Model, effort and context picks take the cheapest option whose vote share up to it reaches 0.65, instead of the weighted median. A model pick considers only the models that the vote names, so a model left out of the question is never picked. Fable is described as long autonomous work and correctness-critical problems, and a design question answered in a few sentences goes to Opus. A plan or a helper needs 0.65 of the shape vote, and in auto permission mode Haiku is not offered as a helper. The hash records this local file.",
     "models.ts": "Unchanged.",
     "jev.ts": "Native Promise equivalent with Zod boundary decoding, secret-safe warnings and shared pending credential lookup.",
-    "router.ts": "Native Promise first/later router with injected persistence. Same tables, questions, fallback and decision flow. Adds schemas.",
+    "router.ts": "Native Promise first/later router with injected persistence. Same tables, questions, fallback and decision flow. Adds schemas, and passes the thread's permission mode to the helper models.",
     "plans.ts": "In-memory native plan store and Promise plan routing wrapper. Same core plan policy."
   },
   "settings": {

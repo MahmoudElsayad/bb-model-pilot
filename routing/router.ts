@@ -1,4 +1,4 @@
-import { buildState, delegationFrom, delegationQuestions, EFFORTS, HELPER_MODELS, mainAgentFact, routeFrom, routingNote, WINDOWS, type Choice, type Delegation, type Question, type Route } from "./core.js";
+import { buildState, delegationFrom, delegationQuestions, EFFORTS, HELPER_MODELS, helperModelsFor, mainAgentFact, routeFrom, routingNote, WINDOWS, type Choice, type Delegation, type Question, type Route } from "./core.js";
 import type { ModelId } from "./models.js";
 import type { JevAsk, JevCall } from "./jev.js";
 import { z } from "zod";
@@ -60,9 +60,10 @@ export const routeThread = (answers: Record<string, Choice> | null): Route =>
   routeFrom(answers, FALLBACK_THREAD, THREAD_MODELS);
 
 
+/** `permissionMode` is the thread's, which decides the helper models it can run. */
 export type RouteRequest =
-  | { threadId: string; prompt: string; turn: "first" }
-  | { threadId: string; prompt: string; turn: "later"; currentModel: string };
+  | { threadId: string; prompt: string; turn: "first"; permissionMode?: string }
+  | { threadId: string; prompt: string; turn: "later"; currentModel: string; permissionMode?: string };
 export type RouteReply = {
   route: Route | null;
   decision: "first" | "unmanaged" | "changed" | "routed";
@@ -82,12 +83,13 @@ export type ThreadRouterDeps = {
 };
 export function makeThreadRouter(deps: ThreadRouterDeps) {
   return async (request: RouteRequest): Promise<RouteReply> => {
+    const helperModels = helperModelsFor(request.permissionMode);
     if (request.turn === "first") {
       const reply = await deps.ask(buildState(request.prompt, { "Conversation turn": "first prompt" }), {
-        ...threadQuestions(), ...delegationQuestions(),
+        ...threadQuestions(), ...delegationQuestions(helperModels),
       });
       const route = routeThread(reply.answers);
-      const delegation = delegationFrom(reply.answers, route);
+      const delegation = delegationFrom(reply.answers, route, helperModels);
       await deps.record(request.threadId, { type: "route", scope: "main", isFirstPrompt: true,
         description: "Auto provider", route, jev: reply.jev, delegation });
       return { route, decision: "first", delegation, note: routingNote(delegation), limits: reply.jev.limits ?? null };
@@ -98,8 +100,8 @@ export function makeThreadRouter(deps: ThreadRouterDeps) {
     }
     const reply = await deps.ask(buildState(request.prompt, {
       "Conversation turn": "a later message", "main agent": mainAgentFact(last),
-    }), delegationQuestions());
-    const delegation = delegationFrom(reply.answers, last);
+    }), delegationQuestions(helperModels));
+    const delegation = delegationFrom(reply.answers, last, helperModels);
     await deps.record(request.threadId, { type: "route", scope: "main", isFirstPrompt: false,
       description: "Auto provider", route: last, jev: reply.jev, delegation });
     return { route: last, decision: "routed", delegation, note: routingNote(delegation), limits: reply.jev.limits ?? null };

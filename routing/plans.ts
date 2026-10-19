@@ -1,4 +1,4 @@
-import { planFrom, planQuestions, planState, type Plan, type PlanStepInput, type Route } from "./core.js";
+import { helperModelsFor, planFrom, planQuestions, planState, type Plan, type PlanStepInput, type Route } from "./core.js";
 import type { JevAsk } from "./jev.js";
 
 export function makePlanStore() {
@@ -30,8 +30,9 @@ export function makePlanStore() {
 }
 export type PlanStore = ReturnType<typeof makePlanStore>;
 export function makePlanRouter(ask: JevAsk) {
-  return async (steps: readonly PlanStepInput[], main: Route) => {
-    const reply = await ask(planState(steps, main), planQuestions(steps));
-    return { plan: planFrom(steps, reply.answers, main), jev: reply.jev };
+  return async (steps: readonly PlanStepInput[], main: Route, permissionMode?: string) => {
+    const helperModels = helperModelsFor(permissionMode);
+    const reply = await ask(planState(steps, main), planQuestions(steps, helperModels));
+    return { plan: planFrom(steps, reply.answers, main, helperModels), jev: reply.jev };
   };
 }

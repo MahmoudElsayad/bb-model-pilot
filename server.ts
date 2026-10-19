@@ -5,6 +5,7 @@ import {
   type BbPluginApi,
   type JsonValue,
 } from "@get-bb/plugin-sdk";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import {
   buildDashboard,
@@ -71,6 +72,9 @@ const stepsSchema = z
 const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+/** How often a running helper is checked for an approval prompt. */
+const HELPER_APPROVAL_POLL_MS = 5_000;
+
 export const rpcContract = defineRpcContract({
   dashboard: { input: dashboardInputSchema, output: dashboardSchema },
   setupStatus: {
@@ -129,7 +133,7 @@ export const rpcContract = defineRpcContract({
 });
 export default async function plugin(
   bb: BbPluginApi,
-  dependencies: { ask?: JevAsk } = {},
+  dependencies: { ask?: JevAsk; helperPollMs?: number } = {},
 ) {
   const settings = bb.settings.define({
     classifierProvider: {
@@ -798,14 +802,18 @@ export default async function plugin(
     },
     async execute(raw, ctx) {
       const { steps } = z.object({ steps: stepsSchema }).parse(raw);
-      const { route, environment, thread } = await session(
+      const { route, environment, thread, execution } = await session(
         ctx.threadId,
         ctx.signal,
       );
       const routePlan = makePlanRouter(
         askOnHost(environment.hostId, ctx.signal),
       );
-      const { plan, jev } = await routePlan(steps, route);
+      const { plan, jev } = await routePlan(
+        steps,
+        route,
+        execution?.permissionMode,
+      );
       await bb.storage.kv.set(planKey(ctx.threadId), plan);
       if (thread.providerId === "auto")
         await host
@@ -884,6 +892,40 @@ export default async function plugin(
       return planText(plan);
     },
   });
+  /**
+   * Waits until a helper is idle. A helper's thread is hidden, so an approval it asks for reaches
+   * nobody and it would wait until the tool call times out. It fails as soon as it asks instead,
+   * naming what it asked for, so the main agent can do that work itself.
+   */
+  async function idleOrBlocked(threadId: string, signal: AbortSignal) {
+    const done = new AbortController();
+    const stop = () => done.abort();
+    signal.addEventListener("abort", stop, { once: true });
+    const blocked = async (): Promise<never> => {
+      for (;;) {
+        await delay(dependencies.helperPollMs ?? HELPER_APPROVAL_POLL_MS, undefined, { signal: done.signal });
+        const pending = await bb.sdk.threads.interactions.list({ threadId, signal: done.signal });
+        if (pending.length > 0) {
+          const asked = pending.map((interaction) => {
+            const payload = interaction.payload as { kind?: string; subject?: { toolName?: string } };
+            return payload.subject?.toolName ?? payload.kind ?? "an action";
+          });
+          throw new Error(
+            `The helper asked for approval to use ${[...new Set(asked)].join(", ")}, and nobody can answer a helper's approval prompt, so it was stopped. Do this work yourself.`,
+          );
+        }
+      }
+    };
+    try {
+      await Promise.race([
+        bb.sdk.threads.wait({ threadId, status: "idle", timeoutMs: 3_600_000, signal: done.signal }),
+        blocked(),
+      ]);
+    } finally {
+      done.abort();
+      signal.removeEventListener("abort", stop);
+    }
+  }
   bb.agents.registerTool({
     name: "auto_delegate",
     description:
@@ -991,12 +1033,7 @@ export default async function plugin(
           });
           childId = child.id;
           controller.signal.throwIfAborted();
-          await bb.sdk.threads.wait({
-            threadId: child.id,
-            status: "idle",
-            timeoutMs: 3_600_000,
-            signal: controller.signal,
-          });
+          await idleOrBlocked(child.id, controller.signal);
           const report = await bb.sdk.threads.output({ threadId: child.id });
           if (planned)
             await updatePlan(
