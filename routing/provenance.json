@@ -11,7 +11,7 @@
     "core.ts": "The ./models.ts import becomes ./models.js. Model, effort and context picks take the cheapest option whose vote share up to it reaches 0.65, instead of the weighted median. A model pick considers only the models that the vote names, so a model left out of the question is never picked. Fable is described as long autonomous work and correctness-critical problems, and a design question answered in a few sentences goes to Opus. A plan or a helper needs 0.65 of the shape vote, and in auto permission mode Haiku is not offered as a helper. The hash records this local file.",
     "models.ts": "Unchanged.",
     "jev.ts": "Native Promise equivalent with Zod boundary decoding, secret-safe warnings and shared pending credential lookup.",
-    "router.ts": "Native Promise first/later router with injected persistence. Same tables, questions, fallback and decision flow. Adds schemas, and passes the thread's permission mode to the helper models.",
+    "router.ts": "Native Promise first/later router with injected persistence. Same tables, questions, fallback and decision flow. Adds schemas, passes the thread's permission mode to the helper models, and asks for each later message's effort.",
     "plans.ts": "In-memory native plan store and Promise plan routing wrapper. Same core plan policy."
   },
   "settings": {

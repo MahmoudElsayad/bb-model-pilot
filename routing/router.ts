@@ -1,4 +1,4 @@
-import { buildState, delegationFrom, delegationQuestions, EFFORTS, HELPER_MODELS, helperModelsFor, mainAgentFact, routeFrom, routingNote, WINDOWS, type Choice, type Delegation, type Question, type Route } from "./core.js";
+import { buildState, delegationFrom, delegationQuestions, EFFORTS, HELPER_MODELS, helperModelsFor, mainAgentFact, pickEnough, routeFrom, routingNote, WINDOWS, type Choice, type Delegation, type Question, type Route } from "./core.js";
 import type { ModelId } from "./models.js";
 import type { JevAsk, JevCall } from "./jev.js";
 import { z } from "zod";
@@ -56,6 +56,27 @@ export function threadQuestions(): Record<string, Question> {
   };
 }
 
+/**
+ * The effort question for a later message. Changing the effort between turns keeps Claude Code's
+ * prompt cache: on a 107k-token Opus thread, the next request still read the whole context from
+ * cache (scripts/measure/wp2-effort.md).
+ */
+function laterEffortQuestion(): Record<string, Question> {
+  return {
+    effort: {
+      type: "choice",
+      instructions: "How much reasoning does the coding agent need for this message?",
+      criteria: EFFORTS,
+    },
+  };
+}
+
+/** The thread's route with this message's effort, or the route unchanged when Jev gave no usable effort. */
+function withMessageEffort(last: Route, answers: Record<string, Choice> | null): Route {
+  const effort = pickEnough(answers?.effort, EFFORTS);
+  return effort === undefined ? last : { ...last, effort: effort.choice as Route["effort"] };
+}
+
 export const routeThread = (answers: Record<string, Choice> | null): Route =>
   routeFrom(answers, FALLBACK_THREAD, THREAD_MODELS);
 
@@ -100,10 +121,11 @@ export function makeThreadRouter(deps: ThreadRouterDeps) {
     }
     const reply = await deps.ask(buildState(request.prompt, {
       "Conversation turn": "a later message", "main agent": mainAgentFact(last),
-    }), delegationQuestions(helperModels));
-    const delegation = delegationFrom(reply.answers, last, helperModels);
+    }), { ...delegationQuestions(helperModels), ...laterEffortQuestion() });
+    const route = withMessageEffort(last, reply.answers);
+    const delegation = delegationFrom(reply.answers, route, helperModels);
     await deps.record(request.threadId, { type: "route", scope: "main", isFirstPrompt: false,
-      description: "Auto provider", route: last, jev: reply.jev, delegation });
-    return { route: last, decision: "routed", delegation, note: routingNote(delegation), limits: reply.jev.limits ?? null };
+      description: "Auto provider", route, jev: reply.jev, delegation });
+    return { route, decision: "routed", delegation, note: routingNote(delegation), limits: reply.jev.limits ?? null };
   };
 }

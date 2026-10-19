@@ -88,6 +88,28 @@ test("later turns retain the main route, and manual changes stop routing", async
   assert.equal(states.length, 2);
 });
 
+test("a later message gets its own effort and keeps the thread's model", async () => {
+  let route: Route | undefined;
+  const asked: string[][] = [];
+  const efforts: Record<string, number>[] = [{ low: 0.1, medium: 0.2, high: 0.7 }, { low: 0.8, medium: 0.2 }];
+  const router = makeThreadRouter({
+    ask: async (_, questions) => {
+      asked.push(Object.keys(questions));
+      const probabilities = efforts[asked.length - 1] ?? {};
+      return reply({ model: { choice: "claude-opus-5-5", confidence: 1 }, shape: { choice: "main", confidence: 1 },
+        effort: { choice: "", confidence: 0, probabilities } });
+    },
+    record: async (_, entry) => { route = entry.route; }, lastRoute: async () => route,
+  });
+  const first = await router({ threadId: "thread", prompt: "Find why the merge failed.", turn: "first" });
+  assert.equal(first.route?.effort, "high");
+  const later = await router({ threadId: "thread", prompt: "Thanks, which commit?", turn: "later", currentModel: "claude-opus-5-5" });
+  assert.ok(asked[1]!.includes("effort"));
+  assert.equal(later.route?.model, "claude-opus-5-5");
+  assert.equal(later.route?.effort, "low");
+  assert.equal(route?.effort, "low", "the recorded route carries the message's effort");
+});
+
 test("a plan or a helper needs the same vote share as a model pick, else the main agent works", () => {
   const shape = (probabilities: Record<string, number>) => ({ shape: { choice: "", confidence: 0, probabilities } });
   assert.deepEqual(delegationFrom(shape({ main: 0.49, plan: 0.51 }), FALLBACK_THREAD),
