@@ -37,7 +37,7 @@ Print the bill of a period by source, model, and token category, with the causes
 python3 -I scripts/measure/bill.py --since 2026-09-01 --until 2026-10-18 --json bill.json
 ```
 
-Run a frozen task set on two arms at the same time, then judge and report it:
+Run a frozen task set on two or more arms at the same time, then judge and report it:
 
 ```sh
 python3 -I scripts/measure/paired.py run    TASKS ARMS OUT --budget 30 --parallel 3
@@ -48,6 +48,23 @@ python3 -I scripts/measure/paired.py report TASKS OUT opus pilot
 
 `TASKS` holds the task prompts. Keep it outside the repo, because the prompts come from private sessions.
 `ARMS` maps each arm name to its `bb thread spawn` flags, for example `{"opus": ["--provider", "claude-code", "--model", "claude-opus-5-5", "--reasoning-level", "medium"], "pilot": ["--provider", "auto"]}`.
+An arm can also run a project in its own workspace: `{"rtk": {"flags": [...], "environments": {"PROJECT_ID": "/path/to/worktree"}}}`.
+`blind` and `report` take any number of arms, and one judge rates all of a task's answers in one blind call.
 A run that fails, for example during a network outage, goes to `OUT/failed.jsonl`, and its task runs again next time.
 If the runner stops while threads are still working, `paired.py adopt TASKS ARMS OUT TASK ARM THREAD` finishes that thread's remaining turns.
 The runner sends follow-up turns as user messages, and it finds Model Pilot helpers through their lifecycle owner, because most helpers have no parent thread.
+Before it sends the next message, it waits until the thread has no queued message, no background agent and no busy child thread.
+A background helper's report starts a turn of its own, so the turn count alone does not say that an answer is complete.
+
+## Measurements of the cost plan
+
+Each work package has a result file with its method, numbers and go or no-go decision:
+
+| Package | Result | Scripts |
+| --- | --- | --- |
+| WP0 harness and baseline | `baseline.md` | `bill.py`, `paired.py` |
+| WP1 compact before the cache expires | `wp1-simulation.md`, no-go | `wp1_sim.py`, `wp1_forks.py` |
+| WP2 effort for every message | `wp2-effort.md`, go | `wp2_cache.py`, `turn_cost.py` |
+| WP3 verifier before escalating | `wp3-verifier.md`, no-go | `wp3_verify.py` |
+| WP4 Fable criteria | `wp4-fable.md`, go | `route_all.py`, `replay_cost.py` |
+| WP5 bar for plans and helpers | `wp5-plans-helpers.md`, go | `wp5_count.py` |

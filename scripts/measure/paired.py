@@ -3,11 +3,11 @@
 #   python3 -I scripts/measure/paired.py run    TASKS ARMS OUT [--only id,id] [--budget 30] [--parallel 3]
 #   python3 -I scripts/measure/paired.py adopt  TASKS ARMS OUT TASK ARM THREAD
 #   python3 -I scripts/measure/paired.py price  OUT
-#   python3 -I scripts/measure/paired.py blind  TASKS OUT ARM_A ARM_B
+#   python3 -I scripts/measure/paired.py blind  TASKS OUT ARM ARM [ARM ...]
 #   python3 -I scripts/measure/paired.py judge  OUT
-#   python3 -I scripts/measure/paired.py report TASKS OUT ARM_A ARM_B
+#   python3 -I scripts/measure/paired.py report TASKS OUT ARM ARM [ARM ...]
 # TASKS: {"rule": str, "tasks": [{"id", "kind", "project", "environment" | "newEnvironment", "messages": [str]}]}
-# ARMS:  {"name": ["bb thread spawn flags", ...]}
+# ARMS:  {"name": ["bb thread spawn flags", ...]} or {"name": {"flags": [...], "environments": {"project id": "path"}}}
 import argparse, collections, concurrent.futures as cf, datetime, glob, json, os, random, re, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from prices import priced_as, usd
@@ -27,23 +27,47 @@ def bb(*args, stdin=None, timeout=3700, as_user=False):
 def completed_turns(thread):
     return sum(e["type"] == "turn/completed" for e in json.loads(bb("thread", "log", thread, "--all", "--json")))
 
-def wait_turn(thread, before, timeout_s=1800):
-    """Waits until the thread finished one more turn than `before`. Returns "done", "error" or "timeout"."""
+def user_messages(thread):
+    return sum(e["type"] == "client/turn/requested" and e["data"].get("initiator") == "user"
+               for e in json.loads(bb("thread", "log", thread, "--all", "--json")))
+
+def settled(thread):
+    """Idle with nothing pending: no queued message, no background agent, and every child thread idle.
+    A background helper's report arrives later as a new turn, so a turn that ends while one runs is not the answer."""
+    t = json.loads(bb("thread", "show", thread, "--json"))["thread"]
+    if t["status"] != "idle" or t.get("queuedMessageCount") or t.get("activeBackgroundAgentCount"):
+        return False
+    children = json.loads(bb("thread", "list", "--parent-thread", thread, "--include-hidden", "--json"))
+    return all(c["status"] == "idle" for c in children)
+
+def wait_turn(thread, before, timeout_s=3600):
+    """Waits until the thread finished more turns than `before` and stayed settled across two checks 15 seconds
+    apart. Returns "done", "error" or "timeout"."""
     end = time.time() + timeout_s
     while time.time() < end:
         status = json.loads(bb("thread", "show", thread, "--json"))["thread"]["status"]
         if status == "error":
             return "error"
-        if status == "idle" and completed_turns(thread) > before:
-            return "done"
+        if status == "idle" and completed_turns(thread) > before and settled(thread):
+            time.sleep(15)
+            if settled(thread):
+                return "done"
         time.sleep(10)
     return "timeout"
 
-def run_arm(task, rule, arm, flags, thread=None, turns=None):
-    """Runs one task on one arm. With `thread`, continues that thread after the turns it already finished."""
+def run_arm(task, rule, arm, spec, thread=None, turns=None):
+    """Runs one task on one arm. With `thread`, continues that thread after the turns it already finished.
+    `spec` is the arm's spawn flags, or {"flags": [...], "environments": {project: path}} for an arm that runs
+    a project in its own workspace, such as a worktree with different Claude Code settings."""
     started = time.time()
+    flags, own = (spec, {}) if isinstance(spec, list) else (spec["flags"], spec.get("environments", {}))
     msgs = [m + rule if task["kind"] != "edit" else m for m in task["messages"]]
-    where = ["--environment", task["environment"]] if task.get("environment") else ["--new-environment", task["newEnvironment"]]
+    if task["project"] in own:
+        where = ["--environment", own[task["project"]]]
+    elif task.get("environment"):
+        where = ["--environment", task["environment"]]
+    else:
+        where = ["--new-environment", task["newEnvironment"]]
     if thread is None:
         thread = json.loads(bb("thread", "spawn", "--json", "--parent-self", "--project", task["project"], *where, *flags,
                                "--title", f"measure {task['id']} {arm}", "--prompt-file", "-", stdin=msgs[0]))["id"]
@@ -51,9 +75,13 @@ def run_arm(task, rule, arm, flags, thread=None, turns=None):
     for i, m in enumerate(msgs):
         if i < len(turns):
             continue
-        if i and completed_turns(thread) <= i:
+        # One message can take several turns, because a background helper's report starts a turn of its own.
+        before = completed_turns(thread)
+        if i and user_messages(thread) <= i:
             bb("thread", "tell", thread, "--message-file", "-", stdin=m, as_user=True)
-        state = wait_turn(thread, i)
+        elif before:
+            before -= 1
+        state = wait_turn(thread, before)
         turns.append(json.loads(bb("thread", "output", thread, "--json")).get("output") or "")
         if state != "done":
             bb("thread", "stop", thread)
@@ -177,77 +205,94 @@ def cmd_price(o):
 def runs(out):
     return {(r["task"], r["arm"]): r for r in map(json.loads, open(f"{out}/runs.jsonl"))}
 
+LABELS = "ABCDEFGH"
+
 def cmd_blind(o):
     doc, R = json.load(open(o.tasks)), runs(o.out)
     rng, key = random.Random(4242), {}
     os.makedirs(f"{o.out}/blind", exist_ok=True)
     for t in doc["tasks"]:
-        if (t["id"], o.a) not in R or (t["id"], o.b) not in R:
+        if any((t["id"], arm) not in R for arm in o.arms):
             continue
-        sides = [o.a, o.b]
+        sides = list(o.arms)
         rng.shuffle(sides)
         key[t["id"]] = sides
         text = [f"# Task {t['id']}\n"]
         for i, m in enumerate(t["messages"]):
             text.append(f"\n## User message {i + 1}\n\n{m}\n")
-            for label, arm in zip("AB", sides):
+            for label, arm in zip(LABELS, sides):
                 turns = R[(t["id"], arm)]["turns"]
                 text.append(f"\n### Answer {label}, turn {i + 1}\n\n{turns[i] if i < len(turns) else '(no answer)'}\n")
         open(f"{o.out}/blind/{t['id']}.md", "w").write("".join(text))
     json.dump(key, open(f"{o.out}/blind.key.json", "w"))
-    print(f"{len(key)} pairs in {o.out}/blind")
+    print(f"{len(key)} tasks in {o.out}/blind")
 
-JUDGE = """You judge two answers from two coding agents to the same task. You do not know which agent wrote which answer.
-The task below holds the user's messages and, for each message, Answer A and Answer B.
-For each answer, decide if an engineer can act on it without asking again ("good enough"), judging from the evidence it cites.
-Judge a multi-turn task by its final state after all turns.
-Then pick the better answer, or call a tie if the extra detail does not help.
-Do not use any tools. Reply with only one JSON object:
-{"A": true|false, "B": true|false, "better": "A"|"B"|"tie", "reason": "<one sentence>"}
+COUNTS = {2: "two", 3: "three", 4: "four", 5: "five"}
 
-"""
+def judge_prompt(n):
+    """The judge's instructions for n answers. With two answers it is the text every earlier run used."""
+    labels = LABELS[:n]
+    named = " and ".join([", ".join(f"Answer {l}" for l in labels[:-1]), f"Answer {labels[-1]}"])
+    pick = "the better answer" if n == 2 else "the best answer"
+    fields = ", ".join(f'"{l}": true|false' for l in labels)
+    choices = "|".join(f'"{l}"' for l in labels)
+    return (f"You judge {COUNTS[n]} answers from {COUNTS[n]} coding agents to the same task. "
+            "You do not know which agent wrote which answer.\n"
+            f"The task below holds the user's messages and, for each message, {named}.\n"
+            'For each answer, decide if an engineer can act on it without asking again ("good enough"), judging from the evidence it cites.\n'
+            "Judge a multi-turn task by its final state after all turns.\n"
+            f"Then pick {pick}, or call a tie if the extra detail does not help.\n"
+            "Do not use any tools. Reply with only one JSON object:\n"
+            f'{{{fields}, "better": {choices}|"tie", "reason": "<one sentence>"}}\n\n')
 
-def judge_one(o, task, pair):
+def judge_one(o, task, pair, n):
     t = json.loads(bb("thread", "spawn", "--json", "--parent-self", "--project", o.project, "--environment", o.environment,
                       "--provider", "claude-code", "--model", "claude-opus-5-5", "--reasoning-level", "medium",
-                      "--title", f"measure judge {task}", "--prompt-file", "-", stdin=JUDGE + pair))["id"]
+                      "--title", f"measure judge {task}", "--prompt-file", "-", stdin=judge_prompt(n) + pair))["id"]
     if wait_turn(t, 0) != "done":
         raise RuntimeError(f"judge thread {t} did not finish")
     text = json.loads(bb("thread", "output", t, "--json")).get("output") or ""
     return task, {"thread": t, **json.loads(text[text.index("{"): text.rindex("}") + 1])}
 
 def cmd_judge(o):
+    key = json.load(open(f"{o.out}/blind.key.json"))
     pairs = {f[:-3]: open(f"{o.out}/blind/{f}").read() for f in sorted(os.listdir(f"{o.out}/blind"))}
     path = f"{o.out}/judge.json"
     verdicts = json.load(open(path))["verdicts"] if os.path.exists(path) else {}
+    todo = [(k, p, len(key[k])) for k, p in pairs.items() if k not in verdicts]
     with cf.ThreadPoolExecutor(4) as ex:
-        for task, v in ex.map(lambda kv: judge_one(o, *kv), [(k, p) for k, p in pairs.items() if k not in verdicts]):
+        for task, v in ex.map(lambda item: judge_one(o, *item), todo):
             verdicts[task] = v
             json.dump({"verdicts": verdicts}, open(path, "w"), indent=1)
-            print(task, v["A"], v["B"], v["better"], flush=True)
+            print(task, *(v.get(l) for l in LABELS[:len(key[task])]), v["better"], flush=True)
 
 def cmd_report(o):
     doc, R = json.load(open(o.tasks)), runs(o.out)
     key = json.load(open(f"{o.out}/blind.key.json"))
     V = json.load(open(f"{o.out}/judge.json"))["verdicts"] if os.path.exists(f"{o.out}/judge.json") else {}
-    tot = {o.a: collections.Counter(), o.b: collections.Counter()}
-    print(f"| Task | {o.a} | {o.b} | {o.a} good | {o.b} good | Better |\n| --- | --- | --- | --- | --- | --- |")
+    arms = o.arms
+    tot = {arm: collections.Counter() for arm in arms}
+    print(f"| Task | {' | '.join(arms)} | {' | '.join(f'{a} good' for a in arms)} | Better |")
+    print("| --- " * (2 * len(arms) + 2) + "|")
     for t in doc["tasks"]:
-        if t["id"] not in key:
+        if t["id"] not in key or any(arm not in key[t["id"]] for arm in arms):
             continue
         v = V.get(t["id"], {})
-        good = {arm: v.get(label) for label, arm in zip("AB", key[t["id"]])}
-        better = {"A": key[t["id"]][0], "B": key[t["id"]][1]}.get(v.get("better"), v.get("better"))
-        for arm in (o.a, o.b):
+        label = {arm: LABELS[key[t["id"]].index(arm)] for arm in key[t["id"]]}
+        good = {arm: v.get(label[arm]) for arm in arms}
+        better = {l: arm for arm, l in label.items()}.get(v.get("better"), v.get("better"))
+        for arm in arms:
             p = R[(t["id"], arm)]["price"]
             tot[arm]["usd"] += p["usd"]; tot[arm]["good"] += bool(good[arm]); tot[arm]["n"] += 1
+            tot[arm]["best"] += better == arm
             tot[arm].update({k: p["categories"].get(k, 0) for k in ("write", "read", "new", "out")})
-        print(f"| {t['id']} | ${R[(t['id'], o.a)]['price']['usd']:.2f} | ${R[(t['id'], o.b)]['price']['usd']:.2f} | "
-              f"{'yes' if good[o.a] else 'no'} | {'yes' if good[o.b] else 'no'} | {better or '?'} |")
+        costs = " | ".join(f"${R[(t['id'], arm)]['price']['usd']:.2f}" for arm in arms)
+        goods = " | ".join("yes" if good[arm] else "no" for arm in arms)
+        print(f"| {t['id']} | {costs} | {goods} | {better or '?'} |")
     for arm, c in tot.items():
         per = c["usd"] / c["good"] if c["good"] else float("inf")
-        print(f"{arm}: ${c['usd']:.2f} on {c['n']} tasks, {c['good']} good enough, ${per:.2f} per good-enough answer; "
-              f"write ${c['write']:.2f} read ${c['read']:.2f} uncached ${c['new']:.2f} output ${c['out']:.2f}")
+        print(f"{arm}: ${c['usd']:.2f} on {c['n']} tasks, {c['good']} good enough, ${per:.2f} per good-enough answer, "
+              f"best on {c['best']}; write ${c['write']:.2f} read ${c['read']:.2f} uncached ${c['new']:.2f} output ${c['out']:.2f}")
 
 def main():
     a = argparse.ArgumentParser()
@@ -258,7 +303,7 @@ def main():
     p = s.add_parser("adopt"); p.add_argument("tasks"); p.add_argument("arms"); p.add_argument("out")
     p.add_argument("task"); p.add_argument("arm"); p.add_argument("thread")
     for n in ("blind", "report"):
-        p = s.add_parser(n); p.add_argument("tasks"); p.add_argument("out"); p.add_argument("a"); p.add_argument("b")
+        p = s.add_parser(n); p.add_argument("tasks"); p.add_argument("out"); p.add_argument("arms", nargs="+")
     p = s.add_parser("judge"); p.add_argument("out")
     p.add_argument("--project", default="proj_hymem4rej5"); p.add_argument("--environment", default="env_izxivbi46y")
     o = a.parse_args()
