@@ -21,7 +21,7 @@ Start with ordinary tasks and compare the results before you depend on a classif
 
 ## Install
 
-Version 0.4.4 is an experimental BB plugin for BB 0.46 on macOS.
+Version 0.4.5 is an experimental BB plugin for BB 0.46 on macOS.
 It uses internal BB provider bridges, so a BB update can break compatibility.
 Other platforms and BB versions do not have verified support.
 Native classification was tested with Codex CLI 0.162.1 and Claude Code 2.1.300 command interfaces.

@@ -1,9 +1,26 @@
-# Model Pilot 0.4.4 release notes and requirements
+# Model Pilot 0.4.5 release notes and requirements
 
 Model Pilot is an experimental BB plugin for AI model routing, coding agents, and usage reporting.
 The public source is [MahmoudElsayad/bb-model-pilot](https://github.com/MahmoudElsayad/bb-model-pilot).
 Original plugin code uses the MIT license with copyright 2026 Mahmoud Elsayad.
 Copied T3 Code portions retain the MIT notice in `notices/T3-CODE-LICENSE.txt`.
+
+## Changes in 0.4.5
+
+Every change in this release was measured before it shipped, and the harness is in `scripts/measure/` with its write-ups.
+The classifier now picks the reasoning effort for every message, not only for the first prompt of a thread.
+The thread keeps its model, and an effort change keeps the Claude Code prompt cache.
+On the multi-turn tasks in the measurement set, later messages cost 37% less with no answer lost.
+A plan or a helper now needs the same 65% vote as a model pick before Model Pilot spawns it.
+Below that, the main agent does the work itself.
+Haiku 4.5 is no longer offered as a helper in Claude Code auto mode, because auto mode does not cover Haiku and 18 of 21 Haiku helpers hung on an approval prompt that nobody could see.
+The delegate tool now stops a helper as soon as it asks for an approval and tells the main agent why.
+A design question that needs a few sentences now goes to Opus instead of Fable.
+Fable keeps long autonomous work, correctness-critical changes, and subtle concurrency, security, or data-loss problems.
+On a replay of 199 first prompts, Fable routes fell from 11 to 7 and the repriced cost fell by 2.5%.
+In a four-way comparison on 13 frozen tasks, Model Pilot cost between 17% and 39% less than Opus at medium effort for one fewer good answer out of 13.
+The spread comes from the classifier choosing Opus or Sonnet differently for the same prompt between runs, which this release does not change.
+Compacting idle threads before the cache expires and a verifier before escalating from Sonnet to Opus were measured and rejected.
 
 ## Changes in 0.4.4
 
@@ -54,7 +71,7 @@ The secondary category is `token-usage-and-limits`.
 
 ## Compatibility limits
 
-Version 0.4.4 targets BB 0.46 on macOS, bridge protocol 2, and grammar version 3.
+Version 0.4.5 targets BB 0.46 on macOS, bridge protocol 2, and grammar version 3.
 The adapter uses internal BB bridge files rather than a public reusable provider factory.
 A BB update can require an adapter update.
 Other platforms and BB versions do not have verified support.
