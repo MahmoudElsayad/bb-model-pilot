@@ -68,3 +68,4 @@ Each work package has a result file with its method, numbers and go or no-go dec
 | WP3 verifier before escalating | `wp3-verifier.md`, no-go | `wp3_verify.py` |
 | WP4 Fable criteria | `wp4-fable.md`, go | `route_all.py`, `replay_cost.py` |
 | WP5 bar for plans and helpers | `wp5-plans-helpers.md`, go | `wp5_count.py` |
+| Final run on four arms | `final-run.md`, no release of the candidate | `final_run.py`, `paired.py`, `spend.py` |

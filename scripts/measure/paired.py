@@ -38,7 +38,19 @@ def settled(thread):
     if t["status"] != "idle" or t.get("queuedMessageCount") or t.get("activeBackgroundAgentCount"):
         return False
     children = json.loads(bb("thread", "list", "--parent-thread", thread, "--include-hidden", "--json"))
-    return all(c["status"] == "idle" for c in children)
+    return all(c["status"] == "idle" or awaiting_approval(c["id"]) for c in children)
+
+def awaiting_approval(thread):
+    """True when the thread waits on an approval nobody can see, as Model Pilot 0.4.4 helpers do in auto mode.
+    It never moves again, so the runner stops it and treats it as settled."""
+    pending = {}
+    for e in json.loads(bb("thread", "log", thread, "--all", "--json")):
+        if e["type"] == "system/interaction/lifecycle":
+            pending[e["data"]["interaction"]["id"]] = e["data"]["interaction"]["status"] == "pending"
+    if any(pending.values()):
+        bb("thread", "stop", thread)
+        return True
+    return False
 
 def wait_turn(thread, before, timeout_s=3600):
     """Waits until the thread finished more turns than `before` and stayed settled across two checks 15 seconds
